@@ -1,0 +1,8 @@
+package: github.com/30x/apidGatewayDeploy
+import:
+- package: github.com/30x/apid
+- package: github.com/30x/apidApigeeSync
+- package: github.com/gorilla/mux
+testImport:
+- package: github.com/onsi/ginkgo
+- package: github.com/onsi/gomega
