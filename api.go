@@ -2,11 +2,11 @@ package apiGatewayDeploy
 
 import (
 	"net/http"
-	"github.com/gorilla/mux"
 	"database/sql"
 	"time"
 	"io/ioutil"
 	"encoding/json"
+	"strings"
 )
 
 // spec: http://playground.apistudio.io/450cdaba-54f0-4ae8-b6b9-11c797418c58/#/
@@ -92,8 +92,15 @@ func respHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vars := mux.Vars(r)
-	depID := vars["depid"]
+	// uri is /deployments/{deploymentID}
+	depID := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+
+	if depID == "" {
+		log.Error("No deployment ID")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("No deployment ID")) // todo: probably not a valid response per API spec
+		return
+	}
 
 	var rsp gwBundleResponse
 	buf, _ := ioutil.ReadAll(r.Body)
@@ -107,7 +114,12 @@ func respHandler(w http.ResponseWriter, r *http.Request) {
 	 * If the state of deployment was success, update state of bundles and
 	 * its deployments as success as well
 	 */
-	txn, _ := db.Begin()
+	txn, err := db.Begin()
+	if err != nil {
+		log.Error("Unable to begin transaction: ", err)
+		return
+	}
+
 	var res bool
 	if rsp.Status == "SUCCESS" {
 		res = updateDeploymentSuccess(depID, txn)
@@ -116,28 +128,43 @@ func respHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if res == true {
-		txn.Commit()
+		err = txn.Commit()
 	} else {
-		txn.Rollback()
+		err = txn.Rollback()
 	}
+	if err != nil {
+		log.Error("Unable to finish transaction: ", err)
+		return
+	}
+
 	return
 
 }
 
 func updateDeploymentSuccess(depID string, txn *sql.Tx) bool {
 
-	_, err := txn.Exec("UPDATE BUNDLE_INFO SET deploy_status = ? WHERE deployment_id = ?;",
+	log.Infof("Marking deployment (%s) as SUCCEEDED", depID)
+
+	var rows int64
+	res, err := txn.Exec("UPDATE BUNDLE_INFO SET deploy_status = ? WHERE deployment_id = ?;",
 		DEPLOYMENT_STATE_SUCCESS, depID)
-	if err != nil {
-		log.Error("UPDATE BUNDLE_INFO Failed: Dep Id (%s): ", depID, err)
+	if err == nil {
+		rows, err = res.RowsAffected()
+	}
+	if err != nil || rows == 0 {
+		log.Errorf("UPDATE BUNDLE_INFO Failed: Dep Id (%s): %v", depID, err)
 		return false
 	}
-	log.Info("UPDATE BUNDLE_INFO Success: Dep Id (%s)", depID)
 
-	_, err = txn.Exec("UPDATE BUNDLE_DEPLOYMENT SET deploy_status = ? WHERE id = ?;",
+	log.Infof("UPDATE BUNDLE_INFO Success: Dep Id (%s)", depID)
+
+	res, err = txn.Exec("UPDATE BUNDLE_DEPLOYMENT SET deploy_status = ? WHERE id = ?;",
 		DEPLOYMENT_STATE_SUCCESS, depID)
 	if err != nil {
-		log.Errorf("UPDATE BUNDLE_DEPLOYMENT Failed: Dep Id (%s): ", depID, err)
+		rows, err = res.RowsAffected()
+	}
+	if err != nil || rows == 0 {
+		log.Errorf("UPDATE BUNDLE_DEPLOYMENT Failed: Dep Id (%s): %v", depID, err)
 		return false
 	}
 
@@ -149,10 +176,16 @@ func updateDeploymentSuccess(depID string, txn *sql.Tx) bool {
 
 func updateDeploymentFailure(depID string, rsp gwBundleErrorResponse, txn *sql.Tx) bool {
 
+	log.Infof("marking deployment (%s) as FAILED", depID)
+
+	var rows int64
 	/* Update the Deployment state errors */
-	_, err := txn.Exec("UPDATE BUNDLE_DEPLOYMENT SET deploy_status = ?, error_code = ? WHERE id = ?;",
+	res, err := txn.Exec("UPDATE BUNDLE_DEPLOYMENT SET deploy_status = ?, error_code = ? WHERE id = ?;",
 		DEPLOYMENT_STATE_ERR_GWY, rsp.ErrorCode, depID)
-	if err != nil {
+	if err == nil {
+		rows, err = res.RowsAffected()
+	}
+	if err != nil || rows == 0 {
 		log.Errorf("UPDATE BUNDLE_DEPLOYMENT Failed: Dep Id (%s): %v", depID, err)
 		return false
 	}
@@ -160,9 +193,12 @@ func updateDeploymentFailure(depID string, rsp gwBundleErrorResponse, txn *sql.T
 
 	/* Iterate over Bundles, and update the errors */
 	for _, a := range rsp.ErrorDetails {
-		_, err = txn.Exec("UPDATE BUNDLE_INFO SET deploy_status = ?, errorcode = ?, error_reason = ? WHERE id = ?;", DEPLOYMENT_STATE_ERR_GWY, a.ErrorCode, a.BundleId, a.Reason)
+		res, err = txn.Exec("UPDATE BUNDLE_INFO SET deploy_status = ?, errorcode = ?, error_reason = ? WHERE id = ?;", DEPLOYMENT_STATE_ERR_GWY, a.ErrorCode, a.Reason, a.BundleId)
 		if err != nil {
-			log.Errorf("UPDATE BUNDLE_INFO Failed: Bund Id (%s): ", a.BundleId, err)
+			rows, err = res.RowsAffected()
+		}
+		if err != nil || rows == 0 {
+			log.Errorf("UPDATE BUNDLE_INFO Failed: Bund Id (%s): %v", a.BundleId, err)
 			return false
 		}
 		log.Infof("UPDATE BUNDLE_INFO Success: Bund Id (%s)", a.BundleId)
