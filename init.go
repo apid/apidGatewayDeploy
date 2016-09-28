@@ -65,8 +65,8 @@ func initPlugin(services apid.Services) error {
 
 	go distributeEvents()
 
-	api.HandleFunc("/deployments/{depid}", respHandler)
-	api.HandleFunc("/deployments/current", handleCurrentDeployment)
+	api.HandleFunc("/deployments/current", handleCurrentDeployment).Methods("GET")
+	api.HandleFunc("/deployments/{deploymentID}", respHandler).Methods("POST")
 
 	events.Listen(apidApigeeSync.ApigeeSyncEventSelector, &apigeeSyncHandler{})
 

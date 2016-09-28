@@ -14,7 +14,6 @@ import (
 	"encoding/json"
 	"time"
 	"os"
-	"strings"
 	"fmt"
 	"bytes"
 	"github.com/30x/keymaster/client"
@@ -45,15 +44,12 @@ var _ = Describe("api", func() {
 		// init() will create the tables
 		apid.InitializePlugins()
 
-		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			if req.URL.Path == currentDeploymentPath {
-				handleCurrentDeployment(w, req)
-			} else if strings.HasPrefix(req.URL.Path, "/deployments/") {
-				respHandler(w, req)
-			} else {
-				w.Write([]byte("bundle stuff"))
-			}
-		}))
+		router := apid.API().Router()
+		// fake bundle repo
+		router.HandleFunc("/bundle", func(w http.ResponseWriter, req *http.Request) {
+			w.Write([]byte("bundle stuff"))
+		})
+		server = httptest.NewServer(router)
 
 		db, err = apid.Data().DB()
 		Expect(err).NotTo(HaveOccurred())

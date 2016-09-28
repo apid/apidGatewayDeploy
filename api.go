@@ -6,7 +6,7 @@ import (
 	"time"
 	"io/ioutil"
 	"encoding/json"
-	"strings"
+	"github.com/30x/apid"
 )
 
 // spec: http://playground.apistudio.io/450cdaba-54f0-4ae8-b6b9-11c797418c58/#/
@@ -34,9 +34,6 @@ func distributeEvents() {
 }
 
 func handleCurrentDeployment(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		return
-	}
 
 	block := r.URL.Query()["block"] != nil
 
@@ -82,10 +79,6 @@ func handleCurrentDeployment(w http.ResponseWriter, r *http.Request) {
 
 func respHandler(w http.ResponseWriter, r *http.Request) {
 
-	if r.Method != "POST" {
-		return
-	}
-
 	db, err := data.DB()
 	if err != nil {
 		log.Error("Error accessing database", err)
@@ -93,7 +86,7 @@ func respHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// uri is /deployments/{deploymentID}
-	depID := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+	depID := apid.API().Vars(r)["deploymentID"]
 
 	if depID == "" {
 		log.Error("No deployment ID")
