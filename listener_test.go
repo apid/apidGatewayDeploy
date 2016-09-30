@@ -10,7 +10,6 @@ import (
 
 var _ = Describe("listener", func() {
 
-	// todo: interactions between this and api_test cause failure
 	It("should store data from ApigeeSync in the database", func(done Done) {
 
 		now := time.Now().Unix()
