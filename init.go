@@ -30,9 +30,8 @@ func initPlugin(services apid.Services) error {
 	github.Init(services)
 
 	config := services.Config()
-	config.SetDefault(configBundleDir, "/var/tmp") // todo: good default?
+	config.SetDefault(configBundleDir, "/var/tmp")
 
-	api := services.API()
 	events := services.Events()
 	data = services.Data()
 
@@ -65,8 +64,7 @@ func initPlugin(services apid.Services) error {
 
 	go distributeEvents()
 
-	api.HandleFunc("/deployments/current", handleCurrentDeployment).Methods("GET")
-	api.HandleFunc("/deployments/{deploymentID}", respHandler).Methods("POST")
+	initAPI(services)
 
 	events.Listen(apidApigeeSync.ApigeeSyncEventSelector, &apigeeSyncHandler{})
 

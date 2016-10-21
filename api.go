@@ -9,7 +9,11 @@ import (
 	"github.com/30x/apid"
 )
 
-// spec: http://playground.apistudio.io/450cdaba-54f0-4ae8-b6b9-11c797418c58/#/
+func initAPI(services apid.Services) {
+	services.API().HandleFunc("/deployments/current", handleCurrentDeployment).Methods("GET")
+	services.API().HandleFunc("/deployments/{deploymentID}", respHandler).Methods("POST")
+}
+
 
 // todo: The following was basically just copied from old APID - needs review.
 
