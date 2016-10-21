@@ -1,0 +1,234 @@
+host: playground.apistudio.io
+swagger: '2.0'
+info:
+  version: 0.0.1
+  title: Edge X Apid Gateway Deploy
+  contact:
+    name: Apigee, Inc.
+    url: http://www.apigee.com/
+    email: sales@apigee.com
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+basePath: /deployments
+schemes:
+  - http
+consumes:
+  - application/json
+produces:
+  - application/json
+paths:
+  /current:
+    get:
+      description: Retrieve current deployment system and bundles to install.
+      parameters:
+        - name: If-None-Match
+          in: header
+          type: string
+          description: "If request If-None-Match header matches the ETag of current bundle list AND if the request does NOT have a 'block' query param > 0, the server returns a 304 Not Modified response indicating that the client already has the most recent bundle list."
+        - name: block
+          in: query
+          type: integer
+          description: 'If greater than zero AND if request ETag header not empty AND if there is no new bundle list available, then block for up to the specified number of seconds until a new bundle list becomes available. If no new bundle list becomes available, then return an empty array.'
+      responses:
+        '200':
+          headers:
+            ETag:
+              description: "Hash of bundle list. Client should reuse ETag value in If-None-Match header of the next GET request"
+              type: string
+          description: The system and bundles to install.
+          examples:
+            application/json: {
+              "deploymentId": "abc123",
+              "system" : {
+                "bundleId": "system-bundle-rev-3",
+                "url": "file:///apid/bundles/system-bundle-rev-3.zip"
+              },
+              "bundles": [
+                {
+                  "bundleId": "system-bundle-rev-3",
+                  "authCode": "@#$nike#$#$stage&#$(^#",
+                  "url": "file:///apid/bundles/system-bundle-release-1-1233.zip"
+                },{
+                  "bundleId": "bundleA-rev-9",
+                  "authCode": "@#$nike#$#$prod&#$(^#",
+                  "url": "file:///apid/bundles/bundleA-rev-9-26372.zip"
+                },{
+                  "bundleId": "bundleB-rev-1",
+                  "authCode": "@#$nike#$#$test&#$(^#",
+                  "url": "file:///somewhere/bundles/bundleB-rev-1-72351.zip"
+                }
+              ]
+            }
+          schema:
+            $ref: '#/definitions/DeploymentResponse'
+
+  /{deploymentId}:
+    post:
+      description: Save results of deployment
+      parameters:
+        - name: deploymentId
+          in: path
+          required: true
+          type: string
+          description: deployment ID
+        - name: _
+          in: body
+          required: true
+          description: |
+            Example: <pre>
+            {
+              "status": "SUCCESS|FAIL",
+              #Optional
+              "error": {
+                "errorCode": 5,
+                "reason": "Failed to restart NGINX"
+                "bundleErrors": [
+                  {
+                      "bundleId": "system-bundle-rev-3",
+                      "errorCode": 5,
+                      "reason": "Invalid template parameter"
+                  },
+                  {
+                      "bundleId": "system-bundle-rev-9",
+                      "errorCode": 1,
+                      "reason": "Missing Virtual Host"
+                  }
+                ]
+              }
+            }
+            </pre>
+          schema:
+            $ref: '#/definitions/DeploymentResult'
+      responses:
+        '200':
+          description: OK
+        default:
+          description: |
+            <pre>
+            4xx:
+              {
+                errorCode: "INVALID_REQUEST_PARAMS"
+                reason: "Something wrong!"
+              }
+
+            5xx:
+              {
+                errorCode: "SERVER_SUCKS"
+                reason: "Server took too long"
+              }</pre>
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+
+definitions:
+
+  ErrorResponse:
+    required:
+      - errorCode
+      - reason
+    properties:
+      errorCode:
+        type: number
+      reason:
+        type: string
+
+  DeploymentResponse:
+    type: object
+    required:
+      - deploymentId
+      - system
+      - bundles
+    properties:
+      deploymentId:
+        type: string
+      system:
+        type: array
+        items:
+          $ref: '#/definitions/SystemBundle'
+      bundles:
+        type: array
+        items:
+          $ref: '#/definitions/UserBundle'
+
+  SystemBundle:
+    type: object
+    required:
+      - bundleId
+      - url
+    properties:
+      bundleId:
+        type: string
+      url:
+        type: string
+  UserBundle:
+    allOf:
+      - $ref: '#/definitions/SystemBundle'
+    required:
+      - authCode
+    properties:
+      authCode:
+        type: string
+
+  DeploymentResult:
+    type: object
+    required:
+      - status
+    properties:
+      status:
+        type: string
+        enum:
+          - "SUCCESS"
+          - "FAIL"
+      error:
+        $ref: '#/definitions/DeploymentResultError'
+    description: Status of SUCCESS or FAIL plus error
+
+  DeploymentResultError:
+    type: object
+    required:
+      - errorCode
+      - reason
+    properties:
+      errorCode:
+        type: number
+      reason:
+        type: string
+      bundleErrors:
+        type: array
+        items:
+          $ref: '#/definitions/DeploymentBundleError'
+    description: |
+      <pre> Example:
+      {
+        "error": {
+          "errorCode": 5,
+          "reason": "Failed to restart NGINX"
+          "bundleErrors": [
+            {
+                "bundleId": "system-bundle-rev-3",
+                "errorCode": 5,
+                "reason": "Invalid template parameter"
+            },
+            {
+                "bundleId": "system-bundle-rev-9",
+                "errorCode": 1,
+                "reason": "Missing Virtual Host"
+            }
+          ]
+        }
+      }
+      </pre>
+
+  DeploymentBundleError:
+    type: object
+    required:
+      - bundleId
+      - errorCode
+      - reason
+    properties:
+      bundleId:
+        type: string
+      errorCode:
+        type: number
+      reason:
+        type: string
