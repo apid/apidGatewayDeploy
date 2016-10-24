@@ -73,33 +73,11 @@ func SaveContentFile(repo string, contentFilePath string, ref string, destDir st
 
 /*  GetUrlData() validates GitHub URL and invokes GetContentFileData()
     to return file data as a ReadCloser, which must be closed.
-
-    E.g.)
-      data, err := GetUrlData("https://github.com/apigee-internal/apidx/blob/master/NOTICE", accessToken)
-      if (err != nil) {
-          // error handling
-          return    // must not allow defer to be evaluated
-      }
-      defer data.Close()
 */
-func GetUrlData(rawUrl string, accessToken string) (io.ReadCloser, error) {
+func GetUrlData(u *url.URL, accessToken string) (io.ReadCloser, error) {
+
 	if accessToken == "" {
-		fmt.Errorf("invalid accessToken: %v", accessToken)
-	}
-
-	u, err := url.Parse(rawUrl)
-	if err != nil {
-		return nil, errors.New("DownloadFileUrl: Failed to parse urlStr: " + rawUrl)
-
-	}
-
-	// todo: temporary: if not a github url, just call GET on it
-	if u.Host != "github.com" {
-		res, err := http.Get(rawUrl)
-		if err != nil {
-			return nil, err
-		}
-		return res.Body, nil
+		return nil, fmt.Errorf("invalid accessToken: %v", accessToken)
 	}
 
 	regexStr := `^/(.*)/(blob|raw)/([^/]+)/(.*)$`
@@ -204,25 +182,31 @@ func GetContentFileData(repo string, contentFilePath string, ref string, accessT
 //	destDir := "./data"
 //	accessToken := "abc123"
 //
-//	data, err := GetUrlData("https://github.com/apigee-internal/apidx/blob/master/NOTICE", accessToken)
+//	url, err := url.Parse("https://github.com/apigee-internal/apidx/blob/master/NOTICE")
 //	if (err != nil) {
-//		log.Errorf("Failed to get URL data: %v\n", err)
+//		log.Errorf("Failed to parse URL: %v", err)
+//		return
+//	}
+//
+//	data, err := GetUrlData(url, accessToken)
+//	if (err != nil) {
+//		log.Errorf("Failed to get URL data: %v", err)
 //		return
 //	}
 //	defer data.Close()
 //
 //	if newFile, err := SaveContentFile("apigee-internal/apidx", "/README.md", "master", destDir, "", accessToken); err == nil {
 //		stat, _ := os.Stat(newFile)
-//		fmt.Printf("SaveContentFile: %+v\n\n", stat)
+//		fmt.Printf("SaveContentFile: %+v", stat)
 //	} else {
-//		log.Errorf("Failed to save content file: %v\n", err)
+//		log.Errorf("Failed to save content file: %v", err)
 //	}
 //
 //	if newFile, err := SaveContentFile("apigee-internal/apidx", "/README.md", "master", destDir, "saved_file_1", accessToken); err == nil {
 //		stat, _ := os.Stat(newFile)
-//		fmt.Printf("SaveContentFile: %+v\n\n", stat)
+//		fmt.Printf("SaveContentFile: %+v", stat)
 //	} else {
-//		log.Errorf("Failed to save content file: %v\n", err)
+//		log.Errorf("Failed to save content file: %v", err)
 //	}
 //
 //}

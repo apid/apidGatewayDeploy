@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"time"
 	"github.com/30x/apidGatewayDeploy/github"
+	"net/url"
+	"fmt"
 )
 
 // todo: The following was basically just copied from old APID - needs review.
@@ -74,10 +76,35 @@ type gwBundleResponse struct {
 	GWbunRsp gwBundleErrorResponse `json:"error"`
 }
 
-/* getBundleResourceData retrieves bundle data from a bundle repo
-   (currently a private GitHub repo) and returns a ReadCloser.
-*/
-func getBundleResourceData(uri string) (io.ReadCloser, error) {
+// getBundleResourceData retrieves bundle data from a bundle repo and returns a ReadCloser.
+func getBundleResourceData(uriString string) (io.ReadCloser, error) {
+
+	uri, err := url.Parse(uriString)
+	if err != nil {
+		return nil, fmt.Errorf("DownloadFileUrl: Failed to parse urlStr: %s", uriString)
+
+	}
+
+	// todo: temporary - if not a github url, just open it or call GET on it
+	if uri.Host != "github.com" {
+		// assume it's a file if no scheme
+		if uri.Scheme == "" || uri.Scheme == "file"{
+			f, err := os.Open(uri.Path)
+			if err != nil {
+				return nil, err
+			}
+			return f, nil
+		}
+
+		// some random uri, try to GET it
+		res, err := http.Get(uriString)
+		if err != nil {
+			return nil, err
+		}
+		return res.Body, nil
+	}
+
+	// go get it from github using access token
 	return github.GetUrlData(uri, gitHubAccessToken)
 }
 
@@ -175,13 +202,17 @@ func orchestrateDeployment() string {
 	var deploymentPath string
 	var res int
 	var result bool
-	log.Printf("MAN: %s", manifestString)
 	err = json.Unmarshal([]byte(manifestString), &bf)
 	if err != nil {
 		log.Error("JSON decoding Manifest failed Err: ", err)
 		status = DEPLOYMENT_STATE_ERR_APID
 		goto EB
 	}
+
+	// todo: validate bundle!
+	//for bun := range bf.DepBun {
+	//	if bun.uri
+	//}
 
 	fileInfo, err = os.Stat(bundlePathAbs)
 	if err != nil || !fileInfo.IsDir() {
@@ -240,11 +271,7 @@ EC:
  */
 func createInitBundleDB(fileurl string, id string, cts int64, env string, org string, depid string, typ string, loc string, status int, txn *sql.Tx) bool {
 
-	var (
-		err error
-	)
-
-	_, err = txn.Exec("INSERT INTO BUNDLE_INFO (id, deployment_id, org, env, url, type, deploy_status, created_at, file_url)VALUES(?,?,?,?,?,?,?,?,?);",
+	_, err := txn.Exec("INSERT INTO BUNDLE_INFO (id, deployment_id, org, env, url, type, deploy_status, created_at, file_url)VALUES(?,?,?,?,?,?,?,?,?);",
 		id,
 		depid,
 		org,
@@ -267,11 +294,8 @@ func createInitBundleDB(fileurl string, id string, cts int64, env string, org st
 }
 
 func updateDeployStatusDB(id string, status int, txn *sql.Tx) bool {
-	var (
-		err error
-	)
 
-	_, err = txn.Exec("UPDATE BUNDLE_INFO SET deploy_status = ? WHERE deployment_id = ?;", status, id)
+	_, err := txn.Exec("UPDATE BUNDLE_INFO SET deploy_status = ? WHERE deployment_id = ?;", status, id)
 	if err != nil {
 		log.Error("UPDATE BUNDLE_INFO Failed: (", id, ") : ", err)
 		return false
