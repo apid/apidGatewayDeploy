@@ -6,14 +6,11 @@ import (
 	. "github.com/30x/apidApigeeSync" // for direct access to Payload types
 	"database/sql"
 	"net/http/httptest"
-	"github.com/30x/apid"
-	"github.com/30x/apid/factory"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"encoding/json"
 	"time"
-	"os"
 	"fmt"
 	"bytes"
 	"github.com/30x/keymaster/client"
@@ -25,42 +22,12 @@ const (
 
 var _ = Describe("api", func() {
 
-	var tmpDir string
 	var db *sql.DB
-	var server *httptest.Server
 
-	BeforeSuite(func() {
-		apid.Initialize(factory.DefaultServicesFactory())
-
-		config := apid.Config()
-
+	BeforeEach(func() {
 		var err error
-		tmpDir, err = ioutil.TempDir("", "api_test")
+		db, err = data.DB()
 		Expect(err).NotTo(HaveOccurred())
-
-		config.Set("data_path", tmpDir)
-		config.Set(configBundleDir, tmpDir)
-
-		// init() will create the tables
-		apid.InitializePlugins()
-
-		router := apid.API().Router()
-		// fake bundle repo
-		router.HandleFunc("/bundle", func(w http.ResponseWriter, req *http.Request) {
-			w.Write([]byte("bundle stuff"))
-		})
-		server = httptest.NewServer(router)
-
-		db, err = apid.Data().DB()
-		Expect(err).NotTo(HaveOccurred())
-	})
-
-	AfterSuite(func() {
-		apid.Events().Close()
-		if (server != nil) {
-			server.Close()
-		}
-		os.RemoveAll(tmpDir)
 	})
 
 	It("should get current deployment", func() {
@@ -71,7 +38,7 @@ var _ = Describe("api", func() {
 			deploymentID = "api_test_1"
 		)
 
-		insertTestDeployment(server, deploymentID)
+		insertTestDeployment(testServer, deploymentID)
 
 		err = db.QueryRow("SELECT deploy_status from BUNDLE_INFO WHERE deployment_id = ?;", deploymentID).Scan(&deployStatus)
 		Expect(err).ShouldNot(HaveOccurred())
@@ -81,7 +48,7 @@ var _ = Describe("api", func() {
 		Expect(err).ShouldNot(HaveOccurred())
 		Expect(deployStatus).Should(Equal(DEPLOYMENT_STATE_READY))
 
-		uri, err := url.Parse(server.URL)
+		uri, err := url.Parse(testServer.URL)
 		uri.Path = currentDeploymentPath
 
 		res, err := http.Get(uri.String())
@@ -98,9 +65,9 @@ var _ = Describe("api", func() {
 	It("should mark a deployment as deployed", func() {
 
 		deploymentID := "api_test_2"
-		insertTestDeployment(server, deploymentID)
+		insertTestDeployment(testServer, deploymentID)
 
-		uri, err := url.Parse(server.URL)
+		uri, err := url.Parse(testServer.URL)
 		uri.Path = fmt.Sprintf("/deployments/%s", deploymentID)
 
 		deploymentResult := &client.DeploymentResult{
@@ -132,9 +99,9 @@ var _ = Describe("api", func() {
 	It("should mark a deployment as failed", func() {
 
 		deploymentID := "api_test_3"
-		insertTestDeployment(server, deploymentID)
+		insertTestDeployment(testServer, deploymentID)
 
-		uri, err := url.Parse(server.URL)
+		uri, err := url.Parse(testServer.URL)
 		uri.Path = fmt.Sprintf("/deployments/%s", deploymentID)
 
 		deploymentResult := &client.DeploymentResult{

@@ -6,11 +6,32 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"time"
+	"encoding/json"
+	"net/url"
 )
 
 var _ = Describe("listener", func() {
 
 	It("should store data from ApigeeSync in the database", func(done Done) {
+
+		uri, err := url.Parse(testServer.URL)
+		Expect(err).ShouldNot(HaveOccurred())
+		uri.Path = "/bundle"
+		bundleUri := uri.String()
+
+		man := bundleManifest{
+			SysBun: systemBundle{
+				Uri: bundleUri,
+			},
+			DepBun: []dependantBundle{
+				{
+ 					Uri: bundleUri,
+				},
+			},
+		}
+		manBytes, err := json.Marshal(man)
+		Expect(err).ShouldNot(HaveOccurred())
+		manifest := string(manBytes)
 
 		now := time.Now().Unix()
 		var event = ChangeSet{}
@@ -22,7 +43,7 @@ var _ = Describe("listener", func() {
 					EntityIdentifier: "entityID",
 					PldCont: Payload{
 						CreatedAt: now,
-						Manifest: "manifest",
+						Manifest: manifest,
 					},
 				},
 			},
@@ -42,13 +63,13 @@ var _ = Describe("listener", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				// todo: should do a lot more checking here... maybe call another api instead?
-				var manifest string
+				var selectedManifest string
 				var createdAt int64
 				err = db.QueryRow("SELECT manifest, created_at from bundle_deployment where id = ?", "entityID").
-					Scan(&manifest, &createdAt)
+					Scan(&selectedManifest, &createdAt)
 				Expect(err).ShouldNot(HaveOccurred())
 
-				Expect(manifest).Should(Equal("manifest"))
+				Expect(manifest).Should(Equal(selectedManifest))
 				Expect(createdAt).Should(Equal(now))
 
 				close(done)
