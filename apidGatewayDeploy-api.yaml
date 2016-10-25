@@ -181,6 +181,10 @@ definitions:
       error:
         $ref: '#/definitions/DeploymentResultError'
     description: Status of SUCCESS or FAIL plus error
+    example: {
+      "status": "SUCCESS"
+    }
+
 
   DeploymentResultError:
     type: object
@@ -196,27 +200,24 @@ definitions:
         type: array
         items:
           $ref: '#/definitions/DeploymentBundleError'
-    description: |
-      <pre> Example:
-      {
-        "error": {
-          "errorCode": 5,
-          "reason": "Failed to restart NGINX"
-          "bundleErrors": [
-            {
-                "bundleId": "system-bundle-rev-3",
-                "errorCode": 5,
-                "reason": "Invalid template parameter"
-            },
-            {
-                "bundleId": "system-bundle-rev-9",
-                "errorCode": 1,
-                "reason": "Missing Virtual Host"
-            }
-          ]
-        }
+    example: {
+      "error": {
+        "errorCode": 5,
+        "reason": "Failed to restart NGINX",
+        "bundleErrors": [
+          {
+              "bundleId": "system-bundle-rev-3",
+              "errorCode": 5,
+              "reason": "Invalid template parameter"
+          },
+          {
+              "bundleId": "system-bundle-rev-9",
+              "errorCode": 1,
+              "reason": "Missing Virtual Host"
+          }
+        ]
       }
-      </pre>
+    }
 
   DeploymentBundleError:
     type: object
