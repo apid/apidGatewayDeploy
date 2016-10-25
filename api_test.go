@@ -1,50 +1,39 @@
 package apiGatewayDeploy
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	. "github.com/30x/apidApigeeSync" // for direct access to Payload types
+	"github.com/30x/keymaster/client"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	. "github.com/30x/apidApigeeSync" // for direct access to Payload types
-	"database/sql"
-	"net/http/httptest"
 	"io/ioutil"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
-	"encoding/json"
 	"time"
-	"fmt"
-	"bytes"
-	"github.com/30x/keymaster/client"
 )
 
-const (
-	currentDeploymentPath = "/deployments/current"
-)
+const currentDeploymentPath = "/deployments/current"
 
 var _ = Describe("api", func() {
 
-	var db *sql.DB
-
-	BeforeEach(func() {
-		var err error
-		db, err = data.DB()
-		Expect(err).NotTo(HaveOccurred())
-	})
+	PIt("should deliver deployment events to long-poll waiters")
 
 	It("should get current deployment", func() {
 
-		var (
-			deployStatus int
-			err error
-			deploymentID = "api_test_1"
-		)
-
+		deploymentID := "api_test_1"
 		insertTestDeployment(testServer, deploymentID)
 
-		err = db.QueryRow("SELECT deploy_status from BUNDLE_INFO WHERE deployment_id = ?;", deploymentID).Scan(&deployStatus)
+		var deployStatus int
+		err := db.QueryRow("SELECT deploy_status from BUNDLE_INFO WHERE deployment_id = ?;",
+			deploymentID).Scan(&deployStatus)
 		Expect(err).ShouldNot(HaveOccurred())
 		Expect(deployStatus).Should(Equal(DEPLOYMENT_STATE_READY))
 
-		err = db.QueryRow("SELECT deploy_status from BUNDLE_DEPLOYMENT WHERE id = ?;", deploymentID).Scan(&deployStatus)
+		err = db.QueryRow("SELECT deploy_status from BUNDLE_DEPLOYMENT WHERE id = ?;",
+			deploymentID).Scan(&deployStatus)
 		Expect(err).ShouldNot(HaveOccurred())
 		Expect(deployStatus).Should(Equal(DEPLOYMENT_STATE_READY))
 
@@ -59,7 +48,9 @@ var _ = Describe("api", func() {
 		body, err := ioutil.ReadAll(res.Body)
 		Expect(err).ShouldNot(HaveOccurred())
 		json.Unmarshal(body, &depRes)
+
 		Expect(depRes.DeploymentId).Should(Equal(deploymentID))
+		Expect(res.Header.Get("etag")).Should(Equal(deploymentID))
 	})
 
 	It("should mark a deployment as deployed", func() {
@@ -87,11 +78,13 @@ var _ = Describe("api", func() {
 		Expect(resp.StatusCode).Should(Equal(http.StatusOK))
 
 		var deployStatus int
-		err = db.QueryRow("SELECT deploy_status from BUNDLE_INFO WHERE deployment_id = ?;", deploymentID).Scan(&deployStatus)
+		err = db.QueryRow("SELECT deploy_status from BUNDLE_INFO WHERE deployment_id = ?;",
+			deploymentID).Scan(&deployStatus)
 		Expect(err).ShouldNot(HaveOccurred())
 		Expect(deployStatus).Should(Equal(DEPLOYMENT_STATE_SUCCESS))
 
-		err = db.QueryRow("SELECT deploy_status from BUNDLE_DEPLOYMENT WHERE id = ?;", deploymentID).Scan(&deployStatus)
+		err = db.QueryRow("SELECT deploy_status from BUNDLE_DEPLOYMENT WHERE id = ?;",
+			deploymentID).Scan(&deployStatus)
 		Expect(err).ShouldNot(HaveOccurred())
 		Expect(deployStatus).Should(Equal(DEPLOYMENT_STATE_SUCCESS))
 	})
@@ -109,7 +102,7 @@ var _ = Describe("api", func() {
 			Status: client.StatusFail,
 			Error: &client.DeploymentError{
 				ErrorCode: 100,
-				Reason: "bad juju",
+				Reason:    "bad juju",
 				//BundleErrors: []client.BundleError{ // todo: add tests for bundle errors
 				//	{
 				//		BundleID: "",
@@ -132,7 +125,8 @@ var _ = Describe("api", func() {
 		Expect(resp.StatusCode).Should(Equal(http.StatusOK))
 
 		var deployStatus int
-		err = db.QueryRow("SELECT deploy_status from BUNDLE_DEPLOYMENT WHERE id = ?;", deploymentID).Scan(&deployStatus)
+		err = db.QueryRow("SELECT deploy_status from BUNDLE_DEPLOYMENT WHERE id = ?;",
+			deploymentID).Scan(&deployStatus)
 		Expect(err).ShouldNot(HaveOccurred())
 		Expect(deployStatus).Should(Equal(DEPLOYMENT_STATE_ERR_GWY))
 	})
@@ -162,12 +156,12 @@ func insertTestDeployment(server *httptest.Server, entityID string) {
 	Expect(err).ShouldNot(HaveOccurred())
 
 	payload := DataPayload{
-		EntityType: "deployment",
-		Operation: "create",
+		EntityType:       "deployment",
+		Operation:        "create",
 		EntityIdentifier: entityID,
 		PldCont: Payload{
 			CreatedAt: time.Now().Unix(),
-			Manifest: string(bundleBytes),
+			Manifest:  string(bundleBytes),
 		},
 	}
 

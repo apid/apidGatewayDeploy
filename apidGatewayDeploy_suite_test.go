@@ -4,17 +4,17 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
-	"testing"
 	"github.com/30x/apid"
 	"github.com/30x/apid/factory"
 	"io/ioutil"
+	"net/http"
 	"net/http/httptest"
 	"os"
-	"net/http"
+	"testing"
 )
 
 var (
-	tmpDir string
+	tmpDir     string
 	testServer *httptest.Server
 )
 
@@ -49,7 +49,7 @@ var _ = BeforeSuite(func() {
 
 var _ = AfterSuite(func() {
 	apid.Events().Close()
-	if (testServer != nil) {
+	if testServer != nil {
 		testServer.Close()
 	}
 	os.RemoveAll(tmpDir)

@@ -1,13 +1,13 @@
 package main
 
 import (
+	"flag"
 	"github.com/30x/apid"
 	"github.com/30x/apid/factory"
-	_ "github.com/30x/apidGatewayDeploy"
 	"github.com/30x/apidApigeeSync"
-	"time"
+	_ "github.com/30x/apidGatewayDeploy"
 	"io/ioutil"
-	"flag"
+	"time"
 )
 
 func main() {
@@ -75,12 +75,12 @@ func insertTestRecord(manifest []byte) {
 	event.Changes = []apidApigeeSync.ChangePayload{
 		{
 			Data: apidApigeeSync.DataPayload{
-				EntityType: "deployment",
-				Operation: "create",
+				EntityType:       "deployment",
+				Operation:        "create",
 				EntityIdentifier: "entityID",
 				PldCont: apidApigeeSync.Payload{
 					CreatedAt: now,
-					Manifest: string(manifest),
+					Manifest:  string(manifest),
 				},
 			},
 		},

@@ -1,9 +1,13 @@
 package apiGatewayDeploy
 
 import (
-	"github.com/30x/apidApigeeSync"
 	"github.com/30x/apid"
+	"github.com/30x/apidApigeeSync"
 )
+
+func initListener(services apid.Services) {
+	services.Events().Listen(apidApigeeSync.ApigeeSyncEventSelector, &apigeeSyncHandler{})
+}
 
 type apigeeSyncHandler struct {
 }
@@ -28,8 +32,8 @@ func (h *apigeeSyncHandler) Handle(e apid.Event) {
 		}
 
 		switch payload.Data.Operation {
-			case "create":
-				insertDeployment(payload.Data)
+		case "create":
+			insertDeployment(payload.Data)
 		}
 
 	}
@@ -37,12 +41,7 @@ func (h *apigeeSyncHandler) Handle(e apid.Event) {
 
 func insertDeployment(payload apidApigeeSync.DataPayload) {
 
-	db, err := data.DB()
-	if err != nil {
-		panic("help me!") // todo: handle
-	}
-
-	_, err = db.Exec("INSERT INTO BUNDLE_DEPLOYMENT (id, manifest, created_at, deploy_status) VALUES (?,?,?,?);",
+	_, err := db.Exec("INSERT INTO BUNDLE_DEPLOYMENT (id, manifest, created_at, deploy_status) VALUES (?,?,?,?);",
 		payload.EntityIdentifier,
 		payload.PldCont.Manifest,
 		payload.PldCont.CreatedAt,

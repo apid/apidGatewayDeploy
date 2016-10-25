@@ -1,19 +1,46 @@
 package apiGatewayDeploy
 
 import (
-	"net/http"
 	"database/sql"
-	"time"
-	"io/ioutil"
 	"encoding/json"
 	"github.com/30x/apid"
+	"io/ioutil"
+	"net/http"
+	"strconv"
+	"time"
 )
+
+// todo: add error codes where this is used
+const ERROR_CODE_TODO = 0
+
+type errorResponse struct {
+	ErrorCode int    `json:"errorCode"`
+	Reason    string `json:"reason"`
+}
 
 func initAPI(services apid.Services) {
 	services.API().HandleFunc("/deployments/current", handleCurrentDeployment).Methods("GET")
 	services.API().HandleFunc("/deployments/{deploymentID}", respHandler).Methods("POST")
 }
 
+func writeError(w http.ResponseWriter, status int, code int, reason string) {
+	e := errorResponse{
+		ErrorCode: code,
+		Reason:    reason,
+	}
+	bytes, err := json.Marshal(e)
+	if err != nil {
+		log.Errorf("unable to marshal errorResponse: %v", err)
+	} else {
+		w.Write(bytes)
+	}
+	log.Debugf("sending (%d) error to client: %s", status, reason)
+	w.WriteHeader(status)
+}
+
+func writeDatabaseError(w http.ResponseWriter) {
+	writeError(w, http.StatusInternalServerError, ERROR_CODE_TODO, "database error")
+}
 
 // todo: The following was basically just copied from old APID - needs review.
 
@@ -22,90 +49,84 @@ func distributeEvents() {
 	for {
 		select {
 		case msg := <-incoming:
-			for sub := range subscribers {
+			for subscriber := range subscribers {
 				select {
-				case sub <- msg:
-					log.Info("Handling LP response for devId: ", msg)
+				case subscriber <- msg:
+					log.Debugf("Handling deploy response for: %s", msg)
 				default:
-					log.Error("listener too far behind - message dropped")
+					log.Error("listener too far behind, message dropped")
 				}
 			}
-		case sub := <-addSubscriber:
-			log.Info("Add subscriber", sub)
-			subscribers[sub] = struct{}{}
+		case subscriber := <-addSubscriber:
+			log.Debugf("Add subscriber: %s", subscriber)
+			subscribers[subscriber] = struct{}{}
 		}
 	}
 }
 
 func handleCurrentDeployment(w http.ResponseWriter, r *http.Request) {
 
-	block := r.URL.Query()["block"] != nil
+	// If block greater than zero AND if request ETag header not empty AND if there is no new bundle list
+	// available, then block for up to the specified number of seconds until a new bundle list becomes
+	// available. If no new bundle list becomes available, then return an empty array.
+	b := r.URL.Query().Get("block")
+	var block int
+	if b != "" {
+		var err error
+		block, err = strconv.Atoi(b)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, ERROR_CODE_TODO, "bad block value, must be number of seconds")
+			return
+		}
+	}
 
-	/* Retrieve the args from the i/p arg */
-	res := sendDeployInfo(w, r)
+	sent := sendDeployInfo(w, r, false)
 
-	/*
-	 * If the call has nothing to return, check to see if the call is a
-	 * blocking request (Simulate Long Poll)
-	 */
-	if res == false && block == true {
-		log.Info("Blocking request... Waiting for new Deployments.")
-		timeout := make(chan bool)
+	// todo: can we kill the timer & channel if client connection is lost?
+
+	// blocking request (Long Poll)
+	if sent == false && block > 0 && r.Header.Get("etag") != "" {
+		log.Debug("Blocking request... Waiting for new Deployments.")
 		newReq := make(chan string)
 
-		/* Update channel of a new request (subscriber) */
+		// Update channel of a new request (subscriber)
 		addSubscriber <- newReq
-		/* Start the timer for the blocking request */
-		/* FIXME: 120 sec to be made configurable ? */
-		go func() {
-			time.Sleep(time.Second * 120)
-			timeout <- true
-		}()
 
+		// Block until timeout of new deployment
 		select {
-		/*
-		 * This blocks till either of the two occurs
-		 * (1) - Timeout
-		 * (2) - A new deployment has occurred
-		 * FIXME: <-newReq has the DevId, this can be
-		 * used directly instead of getting it via
-		 * SQL query in GetDeployInfo()
-		 */
+		case depID := <-newReq:
+			// todo: depID could be used directly instead of getting it again in sendDeployInfo
+			log.Debugf("DeploymentID = %s", depID)
+			sendDeployInfo(w, r, false)
 
-		case <-newReq:
-			sendDeployInfo(w, r)
-
-		case <-timeout:
-			log.Debug("Blocking request Timed out. No new Deployments.")
+		case <-time.After(time.Duration(block) * time.Second):
+			log.Debug("Blocking deployment request timed out.")
+			sendDeployInfo(w, r, true)
 		}
 	}
 }
 
 func respHandler(w http.ResponseWriter, r *http.Request) {
 
-	db, err := data.DB()
-	if err != nil {
-		log.Error("Error accessing database", err)
-		return
-	}
-
-	// uri is /deployments/{deploymentID}
 	depID := apid.API().Vars(r)["deploymentID"]
 
 	if depID == "" {
 		log.Error("No deployment ID")
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("No deployment ID")) // todo: probably not a valid response per API spec
+		// todo: add error code
+		writeError(w, http.StatusBadRequest, 0, "Missing deployment ID")
 		return
 	}
 
 	var rsp gwBundleResponse
 	buf, _ := ioutil.ReadAll(r.Body)
-	err = json.Unmarshal(buf, &rsp)
+	err := json.Unmarshal(buf, &rsp)
 	if err != nil {
 		log.Error("Resp Handler Json Unmarshal err: ", err)
+		// todo: add error code
+		writeError(w, http.StatusBadRequest, 0, "Malformed body")
 		return
 	}
+	// todo: validate request body
 
 	/*
 	 * If the state of deployment was success, update state of bundles and
@@ -113,26 +134,36 @@ func respHandler(w http.ResponseWriter, r *http.Request) {
 	 */
 	txn, err := db.Begin()
 	if err != nil {
-		log.Error("Unable to begin transaction: ", err)
+		log.Errorf("Unable to begin transaction: %s", err)
+		writeDatabaseError(w)
 		return
 	}
 
-	var res bool
+	var updated bool
 	if rsp.Status == "SUCCESS" {
-		res = updateDeploymentSuccess(depID, txn)
+		updated = updateDeploymentSuccess(depID, txn)
 	} else {
-		res = updateDeploymentFailure(depID, rsp.GWbunRsp, txn)
+		updated = updateDeploymentFailure(depID, rsp.GWbunRsp, txn)
 	}
 
-	if res == true {
-		err = txn.Commit()
-	} else {
+	log.Print("***** 1")
+	if !updated {
+		writeDatabaseError(w)
 		err = txn.Rollback()
-	}
-	if err != nil {
-		log.Error("Unable to finish transaction: ", err)
+		if err != nil {
+			log.Errorf("Unable to rollback transaction: %s", err)
+		}
 		return
 	}
+
+	log.Print("***** 2")
+	err = txn.Commit()
+	if err != nil {
+		log.Errorf("Unable to commit transaction: %s", err)
+		writeDatabaseError(w)
+	}
+
+	log.Print("***** 3")
 
 	return
 
@@ -140,7 +171,7 @@ func respHandler(w http.ResponseWriter, r *http.Request) {
 
 func updateDeploymentSuccess(depID string, txn *sql.Tx) bool {
 
-	log.Infof("Marking deployment (%s) as SUCCEEDED", depID)
+	log.Debugf("Marking deployment (%s) as SUCCEEDED", depID)
 
 	var rows int64
 	res, err := txn.Exec("UPDATE BUNDLE_INFO SET deploy_status = ? WHERE deployment_id = ?;",
@@ -190,7 +221,8 @@ func updateDeploymentFailure(depID string, rsp gwBundleErrorResponse, txn *sql.T
 
 	/* Iterate over Bundles, and update the errors */
 	for _, a := range rsp.ErrorDetails {
-		res, err = txn.Exec("UPDATE BUNDLE_INFO SET deploy_status = ?, errorcode = ?, error_reason = ? WHERE id = ?;", DEPLOYMENT_STATE_ERR_GWY, a.ErrorCode, a.Reason, a.BundleId)
+		res, err = txn.Exec("UPDATE BUNDLE_INFO SET deploy_status = ?, errorcode = ?, error_reason = ? "+
+			"WHERE id = ?;", DEPLOYMENT_STATE_ERR_GWY, a.ErrorCode, a.Reason, a.BundleId)
 		if err != nil {
 			rows, err = res.RowsAffected()
 		}

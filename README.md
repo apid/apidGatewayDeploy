@@ -38,9 +38,10 @@ Once the process is running, you should be able to manually give the plugin's AP
     curl -i localhost:9000/deployments/current 
     curl -i -X POST localhost:9000/deployments/entityId -d '{ "status": "SUCCESS" }' 
 
-The following have been exposed as configurable env vars:
+The following may be interesting env vars for configuration:
 
 * APID_API_PORT
+* APID_GATEWAYDEPLOY_GITHUB_ACCESSTOKEN
 
 ## Running tests
 

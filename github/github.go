@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/30x/apid"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -13,7 +14,6 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"github.com/30x/apid"
 )
 
 var log apid.LogService
@@ -111,7 +111,7 @@ func GetContentFileData(repo string, contentFilePath string, ref string, accessT
 	url := "https://api.github.com/repos/" + repo + "/contents" + parentPath + "?ref=" + ref
 
 	client := &http.Client{
-		//CheckRedirect: redirectPolicyFunc,
+	//CheckRedirect: redirectPolicyFunc,
 	}
 	req, err := http.NewRequest("GET", url, nil)
 	if strings.HasPrefix(accessToken, "UPDATE_FROM_GITHUB_API") {

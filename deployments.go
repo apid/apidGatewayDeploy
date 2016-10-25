@@ -3,17 +3,19 @@ package apiGatewayDeploy
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
+	"github.com/30x/apidGatewayDeploy/github"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"time"
-	"github.com/30x/apidGatewayDeploy/github"
-	"net/url"
-	"fmt"
 )
 
 // todo: The following was basically just copied from old APID - needs review.
+
+// todo: /current should return latest (regardless of status) if no ETag
 
 /* All Global Constants go here */
 const DEPLOYMENT_STATE_UNUSED = 0
@@ -24,13 +26,12 @@ const DEPLOYMENT_STATE_ERR_APID = 4
 const DEPLOYMENT_STATE_ERR_GWY = 5
 
 var (
-	bundlePathAbs string
+	bundlePathAbs     string
 	gitHubAccessToken string
 
-	incoming = make(chan string)
+	incoming      = make(chan string)
 	addSubscriber = make(chan chan string)
 )
-
 
 type systemBundle struct {
 	Uri string `json:"uri"`
@@ -88,7 +89,7 @@ func getBundleResourceData(uriString string) (io.ReadCloser, error) {
 	// todo: temporary - if not a github url, just open it or call GET on it
 	if uri.Host != "github.com" {
 		// assume it's a file if no scheme
-		if uri.Scheme == "" || uri.Scheme == "file"{
+		if uri.Scheme == "" || uri.Scheme == "file" {
 			f, err := os.Open(uri.Path)
 			if err != nil {
 				return nil, err
@@ -118,6 +119,7 @@ func createBundle(depPath string, uri string, depid string, org string, env stri
 	if typ == "sys" {
 		bundleID = typ + "_" + timeString
 	} else {
+		// todo: stop using org and env
 		bundleID = typ + "_" + org + "_" + env + "_" + timeString
 	}
 	locFile := depPath + "/" + bundleID + ".zip"
@@ -173,18 +175,13 @@ func orchestrateDeploymentAndTrigger() {
 */
 func orchestrateDeployment() string {
 
-	db, err := data.DB()
-	if err != nil {
-		log.Error("Error accessing database", err)
-		return ""
-	}
-
 	/* (1) Find the latest deployment, if none - get out */
 	status := DEPLOYMENT_STATE_READY
 	txn, _ := db.Begin()
 
 	var manifestString, deploymentID string
-	err = db.QueryRow("SELECT id, manifest FROM BUNDLE_DEPLOYMENT WHERE deploy_status = ? ORDER BY created_at ASC LIMIT 1;", DEPLOYMENT_STATE_UNUSED).
+	err := db.QueryRow("SELECT id, manifest FROM BUNDLE_DEPLOYMENT WHERE deploy_status = ? "+
+		"ORDER BY created_at ASC LIMIT 1;", DEPLOYMENT_STATE_UNUSED).
 		Scan(&deploymentID, &manifestString)
 
 	switch {
@@ -271,17 +268,8 @@ EC:
  */
 func createInitBundleDB(fileurl string, id string, cts int64, env string, org string, depid string, typ string, loc string, status int, txn *sql.Tx) bool {
 
-	_, err := txn.Exec("INSERT INTO BUNDLE_INFO (id, deployment_id, org, env, url, type, deploy_status, created_at, file_url)VALUES(?,?,?,?,?,?,?,?,?);",
-		id,
-		depid,
-		org,
-		env,
-		loc,
-		typ,
-		status,
-		cts,
-		fileurl,
-	)
+	_, err := txn.Exec("INSERT INTO BUNDLE_INFO (id, deployment_id, org, env, url, type, deploy_status, "+
+		"created_at, file_url)VALUES(?,?,?,?,?,?,?,?,?);", id, depid, org, env, loc, typ, status, cts, fileurl)
 
 	if err != nil {
 		log.Error("INSERT BUNDLE_INFO Failed (id, dep id) : (", id, ", ", depid, ")", err)
@@ -314,29 +302,47 @@ func updateDeployStatusDB(id string, status int, txn *sql.Tx) bool {
 
 }
 
-func (dr *deploymentResponse) addBundle(bd bundle) []bundle {
-	dr.Bundles = append(dr.Bundles, bd)
-	return dr.Bundles
-}
+func sendDeployInfo(w http.ResponseWriter, r *http.Request, sendEmpty bool) bool {
 
-func sendDeployInfo(w http.ResponseWriter, r *http.Request) bool {
+	// If If-None-Match header matches the ETag of current bundle list AND if the request does NOT have a 'block'
+	// query param > 0, the server returns a 304 Not Modified response indicating that the client already has the
+	// most recent bundle list.
+	ifNoneMatch := r.Header.Get("If-None-Match")
 
-	db, err := data.DB()
+	// Pick the most recent deployment
+	var depID string
+	// todo: fix /current
+	err := db.QueryRow("SELECT id FROM BUNDLE_DEPLOYMENT WHERE deploy_status = ? ORDER BY created_at ASC LIMIT 1;",
+		DEPLOYMENT_STATE_READY).Scan(&depID)
+	//err = db.QueryRow("SELECT id FROM BUNDLE_DEPLOYMENT ORDER BY created_at ASC LIMIT 1;").Scan(&depID)
 	if err != nil {
-		log.Error("Database error: ", err)
+		log.Errorf("Database error: %s", err)
 		return false
 	}
 
-	/* Pick the most recent deployment that is ready */
-	var depID string
-	err = db.QueryRow("SELECT id FROM BUNDLE_DEPLOYMENT WHERE deploy_status = ? ORDER BY created_at ASC LIMIT 1;",
-		DEPLOYMENT_STATE_READY).Scan(&depID)
+	// todo: is depID appropriate for eTag?
+	if depID == ifNoneMatch {
+		w.WriteHeader(http.StatusNotModified)
+		return true
+	}
+	w.Header().Set("ETag", depID)
 
 	var bundleID, fileUrl string
-	err = db.QueryRow("SELECT file_url, id FROM BUNDLE_INFO WHERE deploy_status = ? AND deployment_id = ? AND type = 'sys';", DEPLOYMENT_STATE_READY, depID).Scan(&fileUrl, &bundleID)
+	// todo: fix /current
+	err = db.QueryRow("SELECT file_url, id FROM BUNDLE_INFO WHERE deploy_status = ? AND deployment_id = ? AND "+
+		"type = 'sys';", DEPLOYMENT_STATE_READY, depID).Scan(&fileUrl, &bundleID)
+	//err = db.QueryRow("SELECT file_url, id FROM BUNDLE_INFO WHERE deployment_id = ? AND " +
+	//	"type = 'sys';", DEPLOYMENT_STATE_READY, depID).Scan(&fileUrl, &bundleID)
 	if err != nil {
-		log.Error("No System Deployment ready: ", err)
-		return false
+		if err == sql.ErrNoRows {
+			log.Debugf("No System Deployment ready: %s", err)
+			if !sendEmpty {
+				return false
+			}
+		} else {
+			log.Errorf("Database error: %s", err)
+			return false
+		}
 	}
 
 	chItems := []bundle{}
@@ -352,24 +358,29 @@ func sendDeployInfo(w http.ResponseWriter, r *http.Request) bool {
 		System:       sysInfo,
 	}
 
-	rows, err := db.Query("SELECT file_url, id FROM BUNDLE_INFO WHERE deploy_status = ? AND deployment_id = ? AND type = 'dep';",
-		DEPLOYMENT_STATE_READY, depID)
+	// todo: fix /current
+	rows, err := db.Query("SELECT file_url, id FROM BUNDLE_INFO WHERE deploy_status = ? AND deployment_id = ? "+
+		"AND type = 'dep';", DEPLOYMENT_STATE_READY, depID)
+	//rows, err := db.Query("SELECT file_url, id FROM BUNDLE_INFO WHERE deployment_id = ? " +
+	//	"AND type = 'dep';", depID)
 	if err != nil {
-		log.Error("No Deployments ready: ", err)
-		return false
+		log.Debugf("No Deployments ready: %s", err)
+		if !sendEmpty {
+			return false
+		}
 	}
 	for rows.Next() {
 		err = rows.Scan(&fileUrl, &bundleID)
 		if err != nil {
-			log.Error("Deployments fetch failed. Err: ", err)
+			log.Errorf("Deployments fetch failed. Err: %s", err)
 			return false
 		}
 		bd := bundle{
-			AuthCode: bundleID, /* FIXME */
+			AuthCode: bundleID, // todo: authCode
 			BundleId: bundleID,
 			URL:      fileUrl,
 		}
-		depResp.addBundle(bd)
+		depResp.Bundles = append(depResp.Bundles, bd)
 	}
 	b, err := json.Marshal(depResp)
 	w.Write(b)

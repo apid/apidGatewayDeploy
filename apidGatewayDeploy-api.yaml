@@ -41,21 +41,21 @@ paths:
               "deploymentId": "abc123",
               "system" : {
                 "bundleId": "system-bundle-rev-3",
-                "url": "file:///apid/bundles/system-bundle-rev-3.zip"
+                "uri": "file:///apid/bundles/system-bundle-rev-3.zip"
               },
               "bundles": [
                 {
                   "bundleId": "system-bundle-rev-3",
                   "authCode": "@#$nike#$#$stage&#$(^#",
-                  "url": "file:///apid/bundles/system-bundle-release-1-1233.zip"
+                  "uri": "file:///apid/bundles/system-bundle-release-1-1233.zip"
                 },{
                   "bundleId": "bundleA-rev-9",
                   "authCode": "@#$nike#$#$prod&#$(^#",
-                  "url": "file:///apid/bundles/bundleA-rev-9-26372.zip"
+                  "uri": "file:///apid/bundles/bundleA-rev-9-26372.zip"
                 },{
                   "bundleId": "bundleB-rev-1",
                   "authCode": "@#$nike#$#$test&#$(^#",
-                  "url": "file:///somewhere/bundles/bundleB-rev-1-72351.zip"
+                  "uri": "file:///somewhere/bundles/bundleB-rev-1-72351.zip"
                 }
               ]
             }
@@ -74,48 +74,14 @@ paths:
         - name: _
           in: body
           required: true
-          description: |
-            Example: <pre>
-            {
-              "status": "SUCCESS|FAIL",
-              #Optional
-              "error": {
-                "errorCode": 5,
-                "reason": "Failed to restart NGINX"
-                "bundleErrors": [
-                  {
-                      "bundleId": "system-bundle-rev-3",
-                      "errorCode": 5,
-                      "reason": "Invalid template parameter"
-                  },
-                  {
-                      "bundleId": "system-bundle-rev-9",
-                      "errorCode": 1,
-                      "reason": "Missing Virtual Host"
-                  }
-                ]
-              }
-            }
-            </pre>
+          description: Success or failure response
           schema:
             $ref: '#/definitions/DeploymentResult'
       responses:
         '200':
           description: OK
         default:
-          description: |
-            <pre>
-            4xx:
-              {
-                errorCode: "INVALID_REQUEST_PARAMS"
-                reason: "Something wrong!"
-              }
-
-            5xx:
-              {
-                errorCode: "SERVER_SUCKS"
-                reason: "Server took too long"
-              }</pre>
+          description: Error response
           schema:
             $ref: '#/definitions/ErrorResponse'
 
@@ -130,6 +96,10 @@ definitions:
         type: number
       reason:
         type: string
+    example: {
+      "errorCode": 601,
+      "reason": "Something's wrong"
+    }
 
   DeploymentResponse:
     type: object

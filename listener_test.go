@@ -1,13 +1,13 @@
 package apiGatewayDeploy
 
 import (
+	"encoding/json"
 	"github.com/30x/apid"
 	. "github.com/30x/apidApigeeSync" // for direct access to Payload types
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"time"
-	"encoding/json"
 	"net/url"
+	"time"
 )
 
 var _ = Describe("listener", func() {
@@ -25,7 +25,7 @@ var _ = Describe("listener", func() {
 			},
 			DepBun: []dependantBundle{
 				{
- 					Uri: bundleUri,
+					Uri: bundleUri,
 				},
 			},
 		}
@@ -38,12 +38,12 @@ var _ = Describe("listener", func() {
 		event.Changes = []ChangePayload{
 			{
 				Data: DataPayload{
-					EntityType: "deployment",
-					Operation: "create",
+					EntityType:       "deployment",
+					Operation:        "create",
 					EntityIdentifier: "entityID",
 					PldCont: Payload{
 						CreatedAt: now,
-						Manifest: manifest,
+						Manifest:  manifest,
 					},
 				},
 			},
@@ -58,9 +58,6 @@ var _ = Describe("listener", func() {
 				if len(changeSet.Changes) > 0 {
 					return
 				}
-
-				db, err := data.DB()
-				Expect(err).NotTo(HaveOccurred())
 
 				// todo: should do a lot more checking here... maybe call another api instead?
 				var selectedManifest string
@@ -77,7 +74,7 @@ var _ = Describe("listener", func() {
 		}
 
 		apid.Events().Listen(ApigeeSyncEventSelector, h)
-		apid.Events().Emit(ApigeeSyncEventSelector, &event) // for standard listener
+		apid.Events().Emit(ApigeeSyncEventSelector, &event)       // for standard listener
 		apid.Events().Emit(ApigeeSyncEventSelector, &ChangeSet{}) // for test listener
 	})
 
