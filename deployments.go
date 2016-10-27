@@ -17,7 +17,6 @@ import (
 
 // todo: /current should return latest (regardless of status) if no ETag
 
-/* All Global Constants go here */
 const DEPLOYMENT_STATE_UNUSED = 0
 const DEPLOYMENT_STATE_INPROG = 1
 const DEPLOYMENT_STATE_READY = 2
@@ -302,87 +301,48 @@ func updateDeployStatusDB(id string, status int, txn *sql.Tx) bool {
 
 }
 
-func sendDeployInfo(w http.ResponseWriter, r *http.Request, sendEmpty bool) bool {
-
-	// If If-None-Match header matches the ETag of current bundle list AND if the request does NOT have a 'block'
-	// query param > 0, the server returns a 304 Not Modified response indicating that the client already has the
-	// most recent bundle list.
-	ifNoneMatch := r.Header.Get("If-None-Match")
-
-	// Pick the most recent deployment
+// getCurrentDeploymentID returns the ID of what should be the "current" deployment
+func getCurrentDeploymentID() (string, error) {
 	var depID string
-	// todo: fix /current
-	err := db.QueryRow("SELECT id FROM BUNDLE_DEPLOYMENT WHERE deploy_status = ? ORDER BY created_at ASC LIMIT 1;",
-		DEPLOYMENT_STATE_READY).Scan(&depID)
-	//err = db.QueryRow("SELECT id FROM BUNDLE_DEPLOYMENT ORDER BY created_at ASC LIMIT 1;").Scan(&depID)
+	err := db.QueryRow("SELECT id FROM BUNDLE_DEPLOYMENT ORDER BY created_at ASC LIMIT 1;").Scan(&depID)
+	return depID, err
+}
+
+
+// getDeployment returns a fully populated deploymentResponse
+func getDeployment(depID string) (*deploymentResponse, error) {
+
+	rows, err := db.Query("SELECT file_url, id, type FROM BUNDLE_INFO WHERE deployment_id = ?;", depID)
 	if err != nil {
-		log.Errorf("Database error: %s", err)
-		return false
+		log.Errorf("Unable to query BUNDLE_INFO. Err: %s", err)
+		return nil, err
 	}
 
-	// todo: is depID appropriate for eTag?
-	if depID == ifNoneMatch {
-		w.WriteHeader(http.StatusNotModified)
-		return true
+	depRes := deploymentResponse{
+		Bundles:      []bundle{},
+		DeploymentId: depID,
 	}
-	w.Header().Set("ETag", depID)
 
-	var bundleID, fileUrl string
-	// todo: fix /current
-	err = db.QueryRow("SELECT file_url, id FROM BUNDLE_INFO WHERE deploy_status = ? AND deployment_id = ? AND "+
-		"type = 'sys';", DEPLOYMENT_STATE_READY, depID).Scan(&fileUrl, &bundleID)
-	//err = db.QueryRow("SELECT file_url, id FROM BUNDLE_INFO WHERE deployment_id = ? AND " +
-	//	"type = 'sys';", DEPLOYMENT_STATE_READY, depID).Scan(&fileUrl, &bundleID)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			log.Debugf("No System Deployment ready: %s", err)
-			if !sendEmpty {
-				return false
+	for rows.Next() {
+		var bundleID, fileUrl, bundleType string
+		err = rows.Scan(&fileUrl, &bundleID, &bundleType)
+		if err != nil {
+			log.Errorf("BUNDLE_INFO fetch failed. Err: %s", err)
+			return nil, err
+		}
+		if bundleType == "sys" {
+			depRes.System = bundle{
+				BundleId: bundleID,
+				URL:      fileUrl,
 			}
 		} else {
-			log.Errorf("Database error: %s", err)
-			return false
+			bd := bundle{
+				AuthCode: bundleID, // todo: authCode?
+				BundleId: bundleID,
+				URL:      fileUrl,
+			}
+			depRes.Bundles = append(depRes.Bundles, bd)
 		}
 	}
-
-	chItems := []bundle{}
-
-	sysInfo := bundle{
-		BundleId: bundleID,
-		URL:      fileUrl,
-	}
-
-	depResp := deploymentResponse{
-		Bundles:      chItems,
-		DeploymentId: depID,
-		System:       sysInfo,
-	}
-
-	// todo: fix /current
-	rows, err := db.Query("SELECT file_url, id FROM BUNDLE_INFO WHERE deploy_status = ? AND deployment_id = ? "+
-		"AND type = 'dep';", DEPLOYMENT_STATE_READY, depID)
-	//rows, err := db.Query("SELECT file_url, id FROM BUNDLE_INFO WHERE deployment_id = ? " +
-	//	"AND type = 'dep';", depID)
-	if err != nil {
-		log.Debugf("No Deployments ready: %s", err)
-		if !sendEmpty {
-			return false
-		}
-	}
-	for rows.Next() {
-		err = rows.Scan(&fileUrl, &bundleID)
-		if err != nil {
-			log.Errorf("Deployments fetch failed. Err: %s", err)
-			return false
-		}
-		bd := bundle{
-			AuthCode: bundleID, // todo: authCode
-			BundleId: bundleID,
-			URL:      fileUrl,
-		}
-		depResp.Bundles = append(depResp.Bundles, bd)
-	}
-	b, err := json.Marshal(depResp)
-	w.Write(b)
-	return true
+	return &depRes, nil
 }

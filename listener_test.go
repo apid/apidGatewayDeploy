@@ -14,6 +14,8 @@ var _ = Describe("listener", func() {
 
 	It("should store data from ApigeeSync in the database", func(done Done) {
 
+		entityID := "listener_test_1"
+
 		uri, err := url.Parse(testServer.URL)
 		Expect(err).ShouldNot(HaveOccurred())
 		uri.Path = "/bundle"
@@ -40,7 +42,7 @@ var _ = Describe("listener", func() {
 				Data: DataPayload{
 					EntityType:       "deployment",
 					Operation:        "create",
-					EntityIdentifier: "entityID",
+					EntityIdentifier: entityID,
 					PldCont: Payload{
 						CreatedAt: now,
 						Manifest:  manifest,
@@ -62,12 +64,16 @@ var _ = Describe("listener", func() {
 				// todo: should do a lot more checking here... maybe call another api instead?
 				var selectedManifest string
 				var createdAt int64
-				err = db.QueryRow("SELECT manifest, created_at from bundle_deployment where id = ?", "entityID").
+				err = db.QueryRow("SELECT manifest, created_at from bundle_deployment where id = ?", entityID).
 					Scan(&selectedManifest, &createdAt)
 				Expect(err).ShouldNot(HaveOccurred())
 
 				Expect(manifest).Should(Equal(selectedManifest))
 				Expect(createdAt).Should(Equal(now))
+
+				// clean up
+				_, err := db.Exec("DELETE from bundle_deployment where id = ?", entityID)
+				Expect(err).ShouldNot(HaveOccurred())
 
 				close(done)
 			},

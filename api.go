@@ -66,43 +66,90 @@ func distributeEvents() {
 
 func handleCurrentDeployment(w http.ResponseWriter, r *http.Request) {
 
-	// If block greater than zero AND if request ETag header not empty AND if there is no new bundle list
-	// available, then block for up to the specified number of seconds until a new bundle list becomes
-	// available. If no new bundle list becomes available, then return an empty array.
+	// If returning without a bundle (immediately or after timeout), status = 404
+	// If returning If-None-Match value is equal to current deployment, status = 304
+	// If returning a new value, status = 200
+
+	// If timeout > 0 AND there is no deployment (or new deployment) available (per If-None-Match), then
+	// block for up to the specified number of seconds until a new deployment becomes available.
 	b := r.URL.Query().Get("block")
-	var block int
+	var timeout int
 	if b != "" {
 		var err error
-		block, err = strconv.Atoi(b)
+		timeout, err = strconv.Atoi(b)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, ERROR_CODE_TODO, "bad block value, must be number of seconds")
 			return
 		}
 	}
 
-	sent := sendDeployInfo(w, r, false)
+	// If If-None-Match header matches the ETag of current bundle list AND if the request does NOT have a 'block'
+	// query param > 0, the server returns a 304 Not Modified response indicating that the client already has the
+	// most recent bundle list.
+	priorDepID := r.Header.Get("If-None-Match")
 
-	// todo: can we kill the timer & channel if client connection is lost?
+	depID, err := getCurrentDeploymentID()
+	if err != nil && err != sql.ErrNoRows{
+		writeDatabaseError(w)
+		return
+	}
 
-	// blocking request (Long Poll)
-	if sent == false && block > 0 && r.Header.Get("etag") != "" {
-		log.Debug("Blocking request... Waiting for new Deployments.")
-		newReq := make(chan string)
+	// not found, no timeout, send immediately
+	if depID == "" && timeout == 0 {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
 
-		// Update channel of a new request (subscriber)
-		addSubscriber <- newReq
-
-		// Block until timeout of new deployment
-		select {
-		case depID := <-newReq:
-			// todo: depID could be used directly instead of getting it again in sendDeployInfo
-			log.Debugf("DeploymentID = %s", depID)
-			sendDeployInfo(w, r, false)
-
-		case <-time.After(time.Duration(block) * time.Second):
-			log.Debug("Blocking deployment request timed out.")
-			sendDeployInfo(w, r, true)
+	// found, send immediately - if doesn't match prior ID
+	if depID != "" {
+		if depID == priorDepID {
+			if timeout == 0 {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			} else {
+				// continue
+			}
+		} else {
+			sendDeployment(w, depID)
+			return
 		}
+	}
+
+	// can't send immediately, we need to block...
+	// todo: can we kill the timer & channel if client connection is lost?
+	// todo: resolve race condition - may miss a notification
+
+	log.Debug("Blocking request... Waiting for new Deployments.")
+	newReq := make(chan string)
+
+	// subscribe to new deployments
+	addSubscriber <- newReq
+
+	// block until new deployment or timeout
+	select {
+	case depID := <-newReq:
+		sendDeployment(w, depID)
+
+	case <-time.After(time.Duration(timeout) * time.Second):
+		log.Debug("Blocking deployment request timed out.")
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+}
+
+func sendDeployment(w http.ResponseWriter, depID string) {
+	deployment, err := getDeployment(depID)
+	if err != nil {
+		log.Errorf("unable to retrieve deployment [%s]: %s", depID, err)
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+	b, err := json.Marshal(deployment)
+	if err != nil {
+		log.Errorf("unable to marshal deployment: %s", err)
+		w.WriteHeader(http.StatusInternalServerError)
+	} else {
+		w.Header().Set("ETag", depID)
+		w.Write(b)
 	}
 }
 
@@ -146,7 +193,6 @@ func respHandler(w http.ResponseWriter, r *http.Request) {
 		updated = updateDeploymentFailure(depID, rsp.GWbunRsp, txn)
 	}
 
-	log.Print("***** 1")
 	if !updated {
 		writeDatabaseError(w)
 		err = txn.Rollback()
@@ -156,17 +202,13 @@ func respHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Print("***** 2")
 	err = txn.Commit()
 	if err != nil {
 		log.Errorf("Unable to commit transaction: %s", err)
 		writeDatabaseError(w)
 	}
 
-	log.Print("***** 3")
-
 	return
-
 }
 
 func updateDeploymentSuccess(depID string, txn *sql.Tx) bool {
