@@ -24,18 +24,18 @@ paths:
         - name: If-None-Match
           in: header
           type: string
-          description: "If request If-None-Match header matches the ETag of current bundle list AND if the request does NOT have a 'block' query param > 0, the server returns a 304 Not Modified response indicating that the client already has the most recent bundle list."
+          description: "If request If-None-Match header matches the ETag of deployment, the server returns a 304 Not Modified response indicating that the client already has the most recent bundle list."
         - name: block
           in: query
           type: integer
-          description: 'If greater than zero AND if request ETag header not empty AND if there is no new bundle list available, then block for up to the specified number of seconds until a new bundle list becomes available. If no new bundle list becomes available, then return an empty array.'
+          description: 'If block > 0 AND if there is no new bundle list available, then block for up to the specified number of seconds until a new bundle list becomes available. If no new deployment becomes available, then return 304 Not Modified if If-None-Match is specified, 404 otherwise.'
       responses:
         '200':
           headers:
             ETag:
-              description: "Hash of bundle list. Client should reuse ETag value in If-None-Match header of the next GET request"
+              description: "Client should reuse ETag value in If-None-Match header of the next GET request."
               type: string
-          description: The system and bundles to install.
+          description: The deployment system and bundles to install.
           examples:
             application/json: {
               "deploymentId": "abc123",
@@ -61,6 +61,10 @@ paths:
             }
           schema:
             $ref: '#/definitions/DeploymentResponse'
+        '304':
+          description: Deployment not modified.
+        '404':
+          description: No current Deployment.
 
   /{deploymentId}:
     post:
@@ -111,9 +115,8 @@ definitions:
       deploymentId:
         type: string
       system:
-        type: array
-        items:
-          $ref: '#/definitions/SystemBundle'
+        type: object
+        $ref: '#/definitions/SystemBundle'
       bundles:
         type: array
         items:
