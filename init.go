@@ -32,15 +32,15 @@ func initPlugin(services apid.Services) error {
 	config.SetDefault(configBundleDir, "/var/tmp")
 
 	var err error
-	bundleDir := config.GetString(configBundleDir)
-	if err := os.MkdirAll(bundleDir, 0700); err != nil {
+	dir := config.GetString(configBundleDir)
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		log.Panicf("Failed bundle directory creation: %v", err)
 	}
-	bundlePathAbs, err = filepath.Abs(bundleDir)
+	bundlePath, err = filepath.Abs(dir)
 	if err != nil {
 		log.Panicf("Cant find Abs Path : %v", err)
 	}
-	log.Infof("Bundle directory path is %s", bundlePathAbs)
+	log.Infof("Bundle directory path is %s", bundlePath)
 
 	gitHubAccessToken = config.GetString(configGithubAccessToken)
 
@@ -55,23 +55,9 @@ func initPlugin(services apid.Services) error {
 	initAPI(services)
 	initListener(services)
 
-	orchestrateDeployment()
+	serviceDeploymentQueue()
 
 	log.Debug("end init")
 
 	return nil
-}
-
-func initDB() {
-	var count int
-	row := db.QueryRow("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='bundle_deployment';")
-	if err := row.Scan(&count); err != nil {
-		log.Panic("Unable to setup database", err)
-	}
-	if count == 0 {
-		_, err := db.Exec("CREATE TABLE bundle_deployment (org varchar(255), id varchar(255), uri varchar(255), env varchar(255), etag varchar(255), manifest text, created_at integer, modified_at integer, deploy_status integer, error_code varchar(255), PRIMARY KEY (id)); CREATE TABLE bundle_info (type integer, env varchar(255), org varchar(255), id varchar(255), url varchar(255), file_url varchar(255), created_at integer, modified_at integer, deployment_id varchar(255), etag varchar(255), custom_tag varchar(255), deploy_status integer, error_code integer, error_reason text, PRIMARY KEY (id), FOREIGN KEY (deployment_id) references BUNDLE_DEPLOYMENT(id) ON DELETE CASCADE);")
-		if err != nil {
-			log.Panic("Unable to initialize DB", err)
-		}
-	}
 }

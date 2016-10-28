@@ -14,7 +14,7 @@ var _ = Describe("listener", func() {
 
 	It("should store data from ApigeeSync in the database", func(done Done) {
 
-		entityID := "listener_test_1"
+		deploymentID := "listener_test_1"
 
 		uri, err := url.Parse(testServer.URL)
 		Expect(err).ShouldNot(HaveOccurred())
@@ -23,11 +23,11 @@ var _ = Describe("listener", func() {
 
 		man := bundleManifest{
 			SysBun: systemBundle{
-				Uri: bundleUri,
+				URI: bundleUri,
 			},
 			DepBun: []dependantBundle{
 				{
-					Uri: bundleUri,
+					URI: bundleUri,
 				},
 			},
 		}
@@ -42,7 +42,7 @@ var _ = Describe("listener", func() {
 				Data: DataPayload{
 					EntityType:       "deployment",
 					Operation:        "create",
-					EntityIdentifier: entityID,
+					EntityIdentifier: deploymentID,
 					PldCont: Payload{
 						CreatedAt: now,
 						Manifest:  manifest,
@@ -61,19 +61,30 @@ var _ = Describe("listener", func() {
 					return
 				}
 
-				// todo: should do a lot more checking here... maybe call another api instead?
-				var selectedManifest string
-				var createdAt int64
-				err = db.QueryRow("SELECT manifest, created_at from bundle_deployment where id = ?", entityID).
-					Scan(&selectedManifest, &createdAt)
+				depID, err := getCurrentDeploymentID()
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(depID).Should(Equal(deploymentID))
+
+				dep, err := getDeployment(depID)
 				Expect(err).ShouldNot(HaveOccurred())
 
-				Expect(manifest).Should(Equal(selectedManifest))
-				Expect(createdAt).Should(Equal(now))
+				Expect(dep.System.URI).To(Equal(man.SysBun.URI))
+				Expect(len(dep.Bundles)).To(Equal(len(man.DepBun)))
+				Expect(dep.Bundles[0].URI).To(Equal(getBundleFilePath(deploymentID, bundleUri)))
+
+				// todo: should do a lot more checking here... maybe call another api instead?
+				//var selectedManifest string
+				//var createdAt int64
+				//err = db.QueryRow("SELECT manifest, created_at from bundle_deployment where id = ?", deploymentID).
+				//	Scan(&selectedManifest, &createdAt)
+				//Expect(err).ShouldNot(HaveOccurred())
+				//
+				//Expect(manifest).Should(Equal(selectedManifest))
+				//Expect(createdAt).Should(Equal(now))
 
 				// clean up
-				_, err := db.Exec("DELETE from bundle_deployment where id = ?", entityID)
-				Expect(err).ShouldNot(HaveOccurred())
+				//_, err = db.Exec("DELETE from bundle_deployment where id = ?", deploymentID)
+				//Expect(err).ShouldNot(HaveOccurred())
 
 				close(done)
 			},

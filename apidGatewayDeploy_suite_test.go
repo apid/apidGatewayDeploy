@@ -28,6 +28,7 @@ var _ = BeforeSuite(func() {
 	config.SetDefault("apigeesync_organization", "X")
 	config.SetDefault("apigeesync_consumer_key", "X")
 	config.SetDefault("apigeesync_consumer_secret", "X")
+	config.SetDefault("apigeesync_log_level", "panic")
 
 	var err error
 	tmpDir, err = ioutil.TempDir("", "api_test")

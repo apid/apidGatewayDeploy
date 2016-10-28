@@ -8,10 +8,20 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+	"fmt"
 )
 
-// todo: add error codes where this is used
-const ERROR_CODE_TODO = 0
+const (
+	RESPONSE_STATUS_SUCCESS = "SUCCESS"
+	RESPONSE_STATUS_FAIL    = "FAIL"
+
+	ERROR_CODE_TODO = 0 // todo: add error codes where this is used
+)
+
+var (
+	incoming      = make(chan string)
+	addSubscriber = make(chan chan string)
+)
 
 type errorResponse struct {
 	ErrorCode int    `json:"errorCode"`
@@ -20,10 +30,11 @@ type errorResponse struct {
 
 func initAPI(services apid.Services) {
 	services.API().HandleFunc("/deployments/current", handleCurrentDeployment).Methods("GET")
-	services.API().HandleFunc("/deployments/{deploymentID}", respHandler).Methods("POST")
+	services.API().HandleFunc("/deployments/{deploymentID}", handleDeploymentResult).Methods("POST")
 }
 
 func writeError(w http.ResponseWriter, status int, code int, reason string) {
+	w.WriteHeader(status)
 	e := errorResponse{
 		ErrorCode: code,
 		Reason:    reason,
@@ -34,21 +45,19 @@ func writeError(w http.ResponseWriter, status int, code int, reason string) {
 	} else {
 		w.Write(bytes)
 	}
-	log.Debugf("sending (%d) error to client: %s", status, reason)
-	w.WriteHeader(status)
+	log.Debugf("sending %d error to client: %s", status, reason)
 }
 
 func writeDatabaseError(w http.ResponseWriter) {
 	writeError(w, http.StatusInternalServerError, ERROR_CODE_TODO, "database error")
 }
 
-// todo: The following was basically just copied from old APID - needs review.
-
 func distributeEvents() {
 	subscribers := make(map[chan string]struct{})
 	for {
 		select {
 		case msg := <-incoming:
+			log.Debugf("Delivering new deployment %s to %d subscribers", msg, len(subscribers))
 			for subscriber := range subscribers {
 				select {
 				case subscriber <- msg:
@@ -82,11 +91,13 @@ func handleCurrentDeployment(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	log.Debugf("api timeout: %d", timeout)
 
 	// If If-None-Match header matches the ETag of current bundle list AND if the request does NOT have a 'block'
 	// query param > 0, the server returns a 304 Not Modified response indicating that the client already has the
 	// most recent bundle list.
 	priorDepID := r.Header.Get("If-None-Match")
+	log.Debugf("if-none-match: %s", priorDepID)
 
 	depID, err := getCurrentDeploymentID()
 	if err != nil && err != sql.ErrNoRows{
@@ -132,7 +143,11 @@ func handleCurrentDeployment(w http.ResponseWriter, r *http.Request) {
 
 	case <-time.After(time.Duration(timeout) * time.Second):
 		log.Debug("Blocking deployment request timed out.")
-		w.WriteHeader(http.StatusNotFound)
+		if priorDepID != "" {
+			w.WriteHeader(http.StatusNotModified)
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
 		return
 	}
 }
@@ -148,32 +163,42 @@ func sendDeployment(w http.ResponseWriter, depID string) {
 		log.Errorf("unable to marshal deployment: %s", err)
 		w.WriteHeader(http.StatusInternalServerError)
 	} else {
+		log.Debugf("sending deployment %s: %s", depID, b)
 		w.Header().Set("ETag", depID)
 		w.Write(b)
 	}
 }
 
-func respHandler(w http.ResponseWriter, r *http.Request) {
+// todo: we'll need to transmit results back to Edge somehow...
+func handleDeploymentResult(w http.ResponseWriter, r *http.Request) {
 
 	depID := apid.API().Vars(r)["deploymentID"]
 
 	if depID == "" {
 		log.Error("No deployment ID")
-		// todo: add error code
-		writeError(w, http.StatusBadRequest, 0, "Missing deployment ID")
+		writeError(w, http.StatusBadRequest, ERROR_CODE_TODO, "Missing deployment ID")
 		return
 	}
 
-	var rsp gwBundleResponse
+	var rsp deploymentResponse
 	buf, _ := ioutil.ReadAll(r.Body)
 	err := json.Unmarshal(buf, &rsp)
 	if err != nil {
 		log.Error("Resp Handler Json Unmarshal err: ", err)
-		// todo: add error code
-		writeError(w, http.StatusBadRequest, 0, "Malformed body")
+		writeError(w, http.StatusBadRequest, ERROR_CODE_TODO, "Malformed JSON")
 		return
 	}
-	// todo: validate request body
+
+	if rsp.Status != RESPONSE_STATUS_SUCCESS && rsp.Status != RESPONSE_STATUS_FAIL {
+		writeError(w, http.StatusBadRequest, ERROR_CODE_TODO,
+			fmt.Sprintf("status must be '%s' or '%s'", RESPONSE_STATUS_SUCCESS, RESPONSE_STATUS_FAIL))
+		return
+	}
+
+	if rsp.Status == RESPONSE_STATUS_FAIL && (rsp.GWbunRsp.ErrorCode == 0 || rsp.GWbunRsp.Reason == "") {
+		writeError(w, http.StatusBadRequest, ERROR_CODE_TODO, "errorCode and reason are required")
+		return
+	}
 
 	/*
 	 * If the state of deployment was success, update state of bundles and
@@ -186,15 +211,19 @@ func respHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var updated bool
-	if rsp.Status == "SUCCESS" {
-		updated = updateDeploymentSuccess(depID, txn)
+	var updateErr error
+	if rsp.Status == RESPONSE_STATUS_SUCCESS {
+		updateErr = updateDeploymentSuccess(depID, txn)
 	} else {
-		updated = updateDeploymentFailure(depID, rsp.GWbunRsp, txn)
+		updateErr = updateDeploymentFailure(depID, rsp.GWbunRsp, txn)
 	}
 
-	if !updated {
-		writeDatabaseError(w)
+	if updateErr != nil {
+		if updateErr == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, ERROR_CODE_TODO, "not found")
+		} else {
+			writeDatabaseError(w)
+		}
 		err = txn.Rollback()
 		if err != nil {
 			log.Errorf("Unable to rollback transaction: %s", err)
@@ -211,68 +240,39 @@ func respHandler(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
-func updateDeploymentSuccess(depID string, txn *sql.Tx) bool {
+func updateDeploymentSuccess(depID string, txn *sql.Tx) error {
 
-	log.Debugf("Marking deployment (%s) as SUCCEEDED", depID)
+	log.Debugf("Marking deployment %s as succeeded", depID)
 
-	var rows int64
-	res, err := txn.Exec("UPDATE BUNDLE_INFO SET deploy_status = ? WHERE deployment_id = ?;",
-		DEPLOYMENT_STATE_SUCCESS, depID)
-	if err == nil {
-		rows, err = res.RowsAffected()
-	}
-	if err != nil || rows == 0 {
-		log.Errorf("UPDATE BUNDLE_INFO Failed: Dep Id (%s): %v", depID, err)
-		return false
-	}
-
-	log.Infof("UPDATE BUNDLE_INFO Success: Dep Id (%s)", depID)
-
-	res, err = txn.Exec("UPDATE BUNDLE_DEPLOYMENT SET deploy_status = ? WHERE id = ?;",
-		DEPLOYMENT_STATE_SUCCESS, depID)
+	err := updateDeploymentStatus(txn, depID, DEPLOYMENT_STATE_SUCCESS, 0)
 	if err != nil {
-		rows, err = res.RowsAffected()
-	}
-	if err != nil || rows == 0 {
-		log.Errorf("UPDATE BUNDLE_DEPLOYMENT Failed: Dep Id (%s): %v", depID, err)
-		return false
+		return err
 	}
 
-	log.Infof("UPDATE BUNDLE_DEPLOYMENT Success: Dep Id (%s)", depID)
+	err = updateAllBundleStatus(txn, depID, DEPLOYMENT_STATE_SUCCESS)
+	if err != nil {
+		return err
+	}
 
-	return true
-
+	return nil
 }
 
-func updateDeploymentFailure(depID string, rsp gwBundleErrorResponse, txn *sql.Tx) bool {
+func updateDeploymentFailure(depID string, rsp deploymentErrorResponse, txn *sql.Tx) error {
 
-	log.Infof("marking deployment (%s) as FAILED", depID)
+	log.Infof("marking deployment %s as FAILED", depID)
 
-	var rows int64
-	/* Update the Deployment state errors */
-	res, err := txn.Exec("UPDATE BUNDLE_DEPLOYMENT SET deploy_status = ?, error_code = ? WHERE id = ?;",
-		DEPLOYMENT_STATE_ERR_GWY, rsp.ErrorCode, depID)
-	if err == nil {
-		rows, err = res.RowsAffected()
+	err := updateDeploymentStatus(txn, depID, DEPLOYMENT_STATE_ERR_GWY, rsp.ErrorCode)
+	if err != nil {
+		return err
 	}
-	if err != nil || rows == 0 {
-		log.Errorf("UPDATE BUNDLE_DEPLOYMENT Failed: Dep Id (%s): %v", depID, err)
-		return false
-	}
-	log.Infof("UPDATE BUNDLE_DEPLOYMENT Success: Dep Id (%s)", depID)
 
-	/* Iterate over Bundles, and update the errors */
+	// Iterate over Bundles, and update the errors
 	for _, a := range rsp.ErrorDetails {
-		res, err = txn.Exec("UPDATE BUNDLE_INFO SET deploy_status = ?, errorcode = ?, error_reason = ? "+
-			"WHERE id = ?;", DEPLOYMENT_STATE_ERR_GWY, a.ErrorCode, a.Reason, a.BundleId)
+		updateBundleStatus(txn, depID, a.BundleId, DEPLOYMENT_STATE_ERR_GWY, a.ErrorCode, a.Reason)
 		if err != nil {
-			rows, err = res.RowsAffected()
+			return err
 		}
-		if err != nil || rows == 0 {
-			log.Errorf("UPDATE BUNDLE_INFO Failed: Bund Id (%s): %v", a.BundleId, err)
-			return false
-		}
-		log.Infof("UPDATE BUNDLE_INFO Success: Bund Id (%s)", a.BundleId)
 	}
-	return true
+
+	return err
 }

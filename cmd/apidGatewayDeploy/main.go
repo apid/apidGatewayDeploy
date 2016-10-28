@@ -28,6 +28,7 @@ func main() {
 	config.SetDefault("apigeesync_organization", "X")
 	config.SetDefault("apigeesync_consumer_key", "X")
 	config.SetDefault("apigeesync_consumer_secret", "X")
+	config.SetDefault("apigeesync_log_level", "panic")
 
 	// if manifest is specified, start with only the manifest using a temp dir
 	var manifest []byte

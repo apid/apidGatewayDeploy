@@ -19,7 +19,7 @@ func (h *apigeeSyncHandler) String() string {
 func (h *apigeeSyncHandler) Handle(e apid.Event) {
 	changeSet, ok := e.(*apidApigeeSync.ChangeSet)
 	if !ok {
-		log.Errorf("Received non-ChangeSet event. This shouldn't happen!")
+		log.Errorf("Received non-ChangeSet event.")
 		return
 	}
 
@@ -33,26 +33,13 @@ func (h *apigeeSyncHandler) Handle(e apid.Event) {
 
 		switch payload.Data.Operation {
 		case "create":
-			insertDeployment(payload.Data)
+			err := queueDeployment(payload.Data)
+			if err == nil {
+				serviceDeploymentQueue()
+			} else {
+				log.Errorf("unable to queue deployment")
+			}
 		}
 
 	}
-}
-
-func insertDeployment(payload apidApigeeSync.DataPayload) {
-
-	_, err := db.Exec("INSERT INTO BUNDLE_DEPLOYMENT (id, manifest, created_at, deploy_status) VALUES (?,?,?,?);",
-		payload.EntityIdentifier,
-		payload.PldCont.Manifest,
-		payload.PldCont.CreatedAt,
-		DEPLOYMENT_STATE_UNUSED,
-	)
-
-	if err != nil {
-		log.Errorf("INSERT BUNDLE_DEPLOYMENT Failed: (%s, %v)", payload.EntityIdentifier, err)
-		return
-	}
-
-	log.Infof("INSERT BUNDLE_DEPLOYMENT Success: (%s)", payload.EntityIdentifier)
-	orchestrateDeploymentAndTrigger()
 }

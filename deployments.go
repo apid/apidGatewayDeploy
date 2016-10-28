@@ -1,7 +1,6 @@
 package apiGatewayDeploy
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"github.com/30x/apidGatewayDeploy/github"
@@ -9,37 +8,22 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
-	"time"
+	"encoding/base64"
+	"path"
 )
 
-// todo: The following was basically just copied from old APID - needs review.
-
-// todo: /current should return latest (regardless of status) if no ETag
-
-const DEPLOYMENT_STATE_UNUSED = 0
-const DEPLOYMENT_STATE_INPROG = 1
-const DEPLOYMENT_STATE_READY = 2
-const DEPLOYMENT_STATE_SUCCESS = 3
-const DEPLOYMENT_STATE_ERR_APID = 4
-const DEPLOYMENT_STATE_ERR_GWY = 5
-
 var (
-	bundlePathAbs     string
-	gitHubAccessToken string
-
-	incoming      = make(chan string)
-	addSubscriber = make(chan chan string)
+	bundlePath string
+	gitHubAccessToken string // todo: temporary - should come from Manifest
 )
 
 type systemBundle struct {
-	Uri string `json:"uri"`
+	URI string `json:"uri"`
 }
 
 type dependantBundle struct {
-	Uri string `json:"uri"`
-	Org string `json:"org"`
-	Env string `json:"env"`
+	URI   string `json:"uri"`
+	Scope string `json:"scope"`
 }
 
 type bundleManifest struct {
@@ -49,35 +33,35 @@ type bundleManifest struct {
 
 type bundle struct {
 	BundleId string `json:"bundleId"`
-	URL      string `json:"url"`
+	URI      string `json:"uri"`
 	AuthCode string `json:"authCode,omitempty"`
 }
 
-type deploymentResponse struct {
+type deployment struct {
 	DeploymentId string   `json:"deploymentId"`
 	Bundles      []bundle `json:"bundles"`
 	System       bundle   `json:"system"`
 }
 
-type gwBundleErrorDetail struct {
+type deploymentErrorDetail struct {
 	ErrorCode int    `json:"errorCode"`
 	Reason    string `json:"reason"`
 	BundleId  string `json:"bundleId"`
 }
 
-type gwBundleErrorResponse struct {
-	ErrorCode    int                   `json:"errorCode"`
-	Reason       string                `json:"reason"`
-	ErrorDetails []gwBundleErrorDetail `json:"bundleErrors"`
+type deploymentErrorResponse struct {
+	ErrorCode    int                     `json:"errorCode"`
+	Reason       string                  `json:"reason"`
+	ErrorDetails []deploymentErrorDetail `json:"bundleErrors"`
 }
 
-type gwBundleResponse struct {
-	Status   string                `json:"status"`
-	GWbunRsp gwBundleErrorResponse `json:"error"`
+type deploymentResponse struct {
+	Status   string                  `json:"status"`
+	GWbunRsp deploymentErrorResponse `json:"error"`
 }
 
-// getBundleResourceData retrieves bundle data from a bundle repo and returns a ReadCloser.
-func getBundleResourceData(uriString string) (io.ReadCloser, error) {
+// retrieveBundle retrieves bundle data from a URI
+func retrieveBundle(uriString string) (io.ReadCloser, error) {
 
 	uri, err := url.Parse(uriString)
 	if err != nil {
@@ -108,241 +92,116 @@ func getBundleResourceData(uriString string) (io.ReadCloser, error) {
 	return github.GetUrlData(uri, gitHubAccessToken)
 }
 
-func createBundle(depPath string, uri string, depid string, org string, env string, typ string, txn *sql.Tx) int {
+// todo: retry on error?
+// check if already exists and skip
+func prepareBundle(depID string, bun dependantBundle) error {
 
-	status := DEPLOYMENT_STATE_INPROG
-	ts := int64(time.Now().UnixNano())
-	timeString := strconv.FormatInt(ts, 10)
-
-	var bundleID string
-	if typ == "sys" {
-		bundleID = typ + "_" + timeString
-	} else {
-		// todo: stop using org and env
-		bundleID = typ + "_" + org + "_" + env + "_" + timeString
-	}
-	locFile := depPath + "/" + bundleID + ".zip"
-
-	var bundleData io.ReadCloser
-	out, err := os.Create(locFile)
+	bundleFile := getBundleFilePath(depID, bun.URI)
+	out, err := os.Create(bundleFile)
 	if err != nil {
-		log.Error("Unable to create Bundle file ", locFile, " Err: ", err)
-		status = DEPLOYMENT_STATE_ERR_APID
-		goto FA
+		log.Errorf("Unable to create bundle file %s, Err: %s", bundleFile, err)
+		return err
 	}
+	defer out.Close()
 
-	bundleData, err = getBundleResourceData(uri)
+	bundleData, err := retrieveBundle(bun.URI)
 	if err != nil {
-		log.Error("Unable to read Bundle URI ", uri, " Err: ", err)
-		status = DEPLOYMENT_STATE_ERR_APID
-		goto FA
+		log.Errorf("Unable to retrieve bundle %s, Err: %s", bun.URI, err)
+		return err
 	}
 	defer bundleData.Close()
-	io.Copy(out, bundleData)
-	out.Close()
 
-FA:
-	locFile = "file://" + locFile
-	success := createInitBundleDB(locFile, bundleID, ts, env, org, depid,
-		typ, locFile, status, txn)
-
-	if !success {
-		return -1
-	} else if status == DEPLOYMENT_STATE_ERR_APID {
-		return 1
-	} else {
-		return 0
+	_, err = io.Copy(out, bundleData)
+	if err != nil {
+		log.Errorf("Unable to write bundle %s, Err: %s", bundleFile, err)
+		return err
 	}
+
+	return nil
 }
 
-func orchestrateDeploymentAndTrigger() {
-
-	depId := orchestrateDeployment()
-	if depId != "" {
-		incoming <- depId
-	}
+func getDeploymentFilesPath(depID string) string {
+	return bundlePath + "/" + depID
 }
 
-/*
- * The series of actions to be taken here are :-
- * (1) Find the latest Deployment id that is in Init state
- * (2) Parse the Manifest URL
- * (3) Download the system bundle and store locally, update DB
- * (4) Download the dependent bundle and store locally, update DB
- * (5) Update deployment state based on the status of deployment
- // returns deploymentID
-*/
-func orchestrateDeployment() string {
-
-	/* (1) Find the latest deployment, if none - get out */
-	status := DEPLOYMENT_STATE_READY
-	txn, _ := db.Begin()
-
-	var manifestString, deploymentID string
-	err := db.QueryRow("SELECT id, manifest FROM BUNDLE_DEPLOYMENT WHERE deploy_status = ? "+
-		"ORDER BY created_at ASC LIMIT 1;", DEPLOYMENT_STATE_UNUSED).
-		Scan(&deploymentID, &manifestString)
-
-	switch {
-	case err == sql.ErrNoRows:
-		log.Error("No Deployments available to be processed")
-		return ""
-	case err != nil:
-		log.Error("SELECT on BUNDLE_DEPLOYMENT failed with Err: ", err)
-		return ""
-	}
-
-	/* (2) Parse Manifest  */
-	var bf bundleManifest
-	var fileInfo os.FileInfo
-	var deploymentPath string
-	var res int
-	var result bool
-	err = json.Unmarshal([]byte(manifestString), &bf)
-	if err != nil {
-		log.Error("JSON decoding Manifest failed Err: ", err)
-		status = DEPLOYMENT_STATE_ERR_APID
-		goto EB
-	}
-
-	// todo: validate bundle!
-	//for bun := range bf.DepBun {
-	//	if bun.uri
-	//}
-
-	fileInfo, err = os.Stat(bundlePathAbs)
-	if err != nil || !fileInfo.IsDir() {
-		log.Error("Path ", bundlePathAbs, " is not a directory")
-		status = DEPLOYMENT_STATE_ERR_APID
-		goto EB
-	}
-
-	deploymentPath = bundlePathAbs + "/" + deploymentID
-	err = os.Mkdir(deploymentPath, 0700)
-	if err != nil {
-		log.Errorf("Deployment Dir creation error: %v", err)
-		status = DEPLOYMENT_STATE_ERR_APID
-		goto EB
-	}
-
-	/* (3) Download system bundle and store locally */
-	res = createBundle(deploymentPath, bf.SysBun.Uri, deploymentID, "", "", "sys", txn)
-	if res == -1 {
-		log.Error("Abort Txn: Unable to update DB with system bundle info")
-		goto EC
-	} else if res == 1 {
-		status = DEPLOYMENT_STATE_ERR_APID
-	}
-
-	/* (4) Loop through the Dependent bundles and store them locally as well */
-	for _, ele := range bf.DepBun {
-		res = createBundle(deploymentPath, ele.Uri, deploymentID, ele.Org, ele.Env, "dep", txn)
-		if res == -1 {
-			log.Error("Abort Txn: Unable to update DB with dependent bundle info")
-			goto EC
-		} else if res == 1 {
-			status = DEPLOYMENT_STATE_ERR_APID
-		}
-	}
-EB:
-	if status == DEPLOYMENT_STATE_ERR_APID && deploymentPath != "" {
-		os.RemoveAll(deploymentPath)
-	}
-	/* (5) Update Deployment state accordingly */
-	result = updateDeployStatusDB(deploymentID, status, txn)
-	if result == false {
-		log.Error("Abort Txn: Unable to update DB with Deployment status")
-		goto EC
-	}
-	txn.Commit()
-	return deploymentID
-EC:
-	os.RemoveAll(deploymentPath)
-	txn.Rollback()
-	return ""
+func getBundleFilePath(depID string, bundleURI string) string {
+	return path.Join(getDeploymentFilesPath(depID), base64.StdEncoding.EncodeToString([]byte(bundleURI)))
 }
 
-/*
- * Create Init Bundle (FIXME : Put this in a struct and pass - too many i/p args)
- */
-func createInitBundleDB(fileurl string, id string, cts int64, env string, org string, depid string, typ string, loc string, status int, txn *sql.Tx) bool {
+// returns first bundle download error
+// all bundles will be attempted regardless of errors, in the future we could retry
+func prepareDeployment(depID string, manifest bundleManifest) error {
 
-	_, err := txn.Exec("INSERT INTO BUNDLE_INFO (id, deployment_id, org, env, url, type, deploy_status, "+
-		"created_at, file_url)VALUES(?,?,?,?,?,?,?,?,?);", id, depid, org, env, loc, typ, status, cts, fileurl)
-
+	deploymentPath := getDeploymentFilesPath(depID)
+	err := os.Mkdir(deploymentPath, 0700)
 	if err != nil {
-		log.Error("INSERT BUNDLE_INFO Failed (id, dep id) : (", id, ", ", depid, ")", err)
-		return false
-	} else {
-		log.Info("INSERT BUNDLE_INFO Success: (", id, ")")
-		return true
+		log.Errorf("Deployment dir creation failed: %v", err)
+		return err
 	}
 
-}
+	// todo: any reason to put all this in a single transaction?
 
-func updateDeployStatusDB(id string, status int, txn *sql.Tx) bool {
-
-	_, err := txn.Exec("UPDATE BUNDLE_INFO SET deploy_status = ? WHERE deployment_id = ?;", status, id)
+	err = insertDeployment(depID, manifest)
 	if err != nil {
-		log.Error("UPDATE BUNDLE_INFO Failed: (", id, ") : ", err)
-		return false
-	} else {
-		log.Info("UPDATE BUNDLE_INFO Success: (", id, ")")
+		log.Errorf("Prepare deployment failed: %v", err)
+		return err
 	}
 
-	_, err = txn.Exec("UPDATE BUNDLE_DEPLOYMENT SET deploy_status = ? WHERE id = ?;", status, id)
-	if err != nil {
-		log.Error("UPDATE BUNDLE_DEPLOYMENT Failed: (", id, ") : ", err)
-		return false
-	} else {
-		log.Info("UPDATE BUNDLE_DEPLOYMENT Success: (", id, ")")
-	}
-	return true
-
-}
-
-// getCurrentDeploymentID returns the ID of what should be the "current" deployment
-func getCurrentDeploymentID() (string, error) {
-	var depID string
-	err := db.QueryRow("SELECT id FROM BUNDLE_DEPLOYMENT ORDER BY created_at ASC LIMIT 1;").Scan(&depID)
-	return depID, err
-}
-
-
-// getDeployment returns a fully populated deploymentResponse
-func getDeployment(depID string) (*deploymentResponse, error) {
-
-	rows, err := db.Query("SELECT file_url, id, type FROM BUNDLE_INFO WHERE deployment_id = ?;", depID)
-	if err != nil {
-		log.Errorf("Unable to query BUNDLE_INFO. Err: %s", err)
-		return nil, err
+	// download bundles and store them locally
+	errors := make(chan error, len(manifest.DepBun))
+	for i, bun := range manifest.DepBun {
+		go func() {
+			err := prepareBundle(depID, bun)
+			errors <- err
+			if err != nil {
+				id := string(i)
+				err = updateBundleStatus(db, depID, id, DEPLOYMENT_STATE_ERR_APID, ERROR_CODE_TODO, err.Error())
+				if err != nil {
+					log.Errorf("Update bundle %s:%s status failed: %v", depID, id, err)
+				}
+			}
+		}()
 	}
 
-	depRes := deploymentResponse{
-		Bundles:      []bundle{},
-		DeploymentId: depID,
-	}
-
-	for rows.Next() {
-		var bundleID, fileUrl, bundleType string
-		err = rows.Scan(&fileUrl, &bundleID, &bundleType)
+	// fail fast on first error, otherwise wait for completion
+	for range manifest.DepBun {
+		err := <- errors
 		if err != nil {
-			log.Errorf("BUNDLE_INFO fetch failed. Err: %s", err)
-			return nil, err
-		}
-		if bundleType == "sys" {
-			depRes.System = bundle{
-				BundleId: bundleID,
-				URL:      fileUrl,
-			}
-		} else {
-			bd := bundle{
-				AuthCode: bundleID, // todo: authCode?
-				BundleId: bundleID,
-				URL:      fileUrl,
-			}
-			depRes.Bundles = append(depRes.Bundles, bd)
+			updateDeploymentStatus(db, depID, DEPLOYMENT_STATE_ERR_APID, ERROR_CODE_TODO)
+			return err
 		}
 	}
-	return &depRes, nil
+
+	return updateDeploymentStatus(db, depID, DEPLOYMENT_STATE_READY, 0)
+}
+
+
+func serviceDeploymentQueue() {
+	log.Debug("Checking for new deployments")
+
+	depID, manifestString := getQueuedDeployment()
+	if depID == "" {
+		return
+	}
+
+	var manifest bundleManifest
+	err := json.Unmarshal([]byte(manifestString), &manifest)
+	if err != nil {
+		log.Errorf("JSON decoding Manifest failed Err: %v", err)
+		return
+	}
+
+	err = prepareDeployment(depID, manifest)
+	if err != nil {
+		log.Errorf("Prepare deployment failed: %v", depID)
+		return
+	}
+
+	err = dequeueDeployment(depID)
+	if err != nil {
+		log.Warnf("Dequeue deployment failed: %v", depID)
+	}
+
+	log.Debugf("Signaling new deployment ready: %s", depID)
+	incoming <- depID
 }
