@@ -24,6 +24,8 @@ type systemBundle struct {
 type dependantBundle struct {
 	URI   string `json:"uri"`
 	Scope string `json:"scope"`
+	Org string   `json:"org"`
+	Env string   `json:"env"`
 }
 
 type bundleManifest struct {

@@ -46,16 +46,22 @@ paths:
               "bundles": [
                 {
                   "bundleId": "system-bundle-rev-3",
-                  "authCode": "@#$nike#$#$stage&#$(^#",
-                  "uri": "file:///apid/bundles/system-bundle-release-1-1233.zip"
+                  "uri": "file:///apid/bundles/system-bundle-release-1-1233.zip",
+                  "scope": "@#$nike#$#$stage&#$(^#",
+                  "org": "nike",
+                  "env": "stage",
                 },{
                   "bundleId": "bundleA-rev-9",
-                  "authCode": "@#$nike#$#$prod&#$(^#",
-                  "uri": "file:///apid/bundles/bundleA-rev-9-26372.zip"
+                  "uri": "file:///apid/bundles/bundleA-rev-9-26372.zip",
+                  "scope": "@#$nike#$#$prod&#$(^#",
+                  "org": "nike",
+                  "env": "prod",
                 },{
                   "bundleId": "bundleB-rev-1",
-                  "authCode": "@#$nike#$#$test&#$(^#",
-                  "uri": "file:///somewhere/bundles/bundleB-rev-1-72351.zip"
+                  "uri": "file:///somewhere/bundles/bundleB-rev-1-72351.zip",
+                  "scope": "@#$nike#$#$test&#$(^#",
+                  "org": "nike",
+                  "env": "test",
                 }
               ]
             }
@@ -126,20 +132,28 @@ definitions:
     type: object
     required:
       - bundleId
-      - url
+      - uri
     properties:
       bundleId:
         type: string
-      url:
+      uri:
         type: string
+
   UserBundle:
     allOf:
       - $ref: '#/definitions/SystemBundle'
     required:
-      - authCode
+      - scope
     properties:
-      authCode:
+      scope:
         type: string
+        description: Used to convey request scope information to APID APIs
+      org:
+        type: string
+        description: Available for legacy purposes
+      env:
+        type: string
+        description: Available for legacy purposes
 
   DeploymentResult:
     type: object
@@ -158,7 +172,6 @@ definitions:
       "status": "SUCCESS"
     }
 
-
   DeploymentResultError:
     type: object
     required:
@@ -176,7 +189,7 @@ definitions:
     example: {
       "error": {
         "errorCode": 5,
-        "reason": "Failed to restart NGINX",
+        "reason": "Failed restart",
         "bundleErrors": [
           {
               "bundleId": "system-bundle-rev-3",
