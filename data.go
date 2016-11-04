@@ -2,7 +2,6 @@ package apiGatewayDeploy
 
 import (
 	"database/sql"
-	"github.com/30x/apidApigeeSync"
 	"time"
 )
 
@@ -93,14 +92,20 @@ func initDB() {
 }
 
 // currently only maintains 1 in the queue
-func queueDeployment(payload apidApigeeSync.DataPayload) error {
+func queueDeployment(deploymentID, manifestString string) error {
 
-	// todo: validate payload manifest
+	log.Debugf("queuing deployment %s: %s", deploymentID, manifestString)
+
+	// validate manifest
+	_, err := parseManifest(manifestString)
+	if err != nil {
+		return err
+	}
 
 	// maintains queue at 1
 	tx, err := db.Begin()
 	if err != nil {
-		log.Debugf("INSERT gateway_deploy_queue failed: (%s)", payload.EntityIdentifier)
+		log.Debugf("INSERT gateway_deploy_queue failed: (%s)", deploymentID)
 		return err
 	}
 	defer tx.Rollback()
@@ -112,22 +117,22 @@ func queueDeployment(payload apidApigeeSync.DataPayload) error {
 	}
 
 	_, err = tx.Exec("INSERT INTO gateway_deploy_queue (id, manifest, created_at) VALUES (?,?,?);",
-		payload.EntityIdentifier,
-		payload.PldCont.Manifest,
-		payload.PldCont.CreatedAt,
+		deploymentID,
+		manifestString,
+		dbTimeNow(),
 	)
 	if err != nil {
-		log.Errorf("INSERT gateway_deploy_queue %s failed: %v", payload.EntityIdentifier, err)
+		log.Errorf("INSERT gateway_deploy_queue %s failed: %v", deploymentID, err)
 		return err
 	}
 
 	err = tx.Commit()
 	if err != nil {
-		log.Errorf("INSERT gateway_deploy_queue %s failed: %v", payload.EntityIdentifier, err)
+		log.Errorf("INSERT gateway_deploy_queue %s failed: %v", deploymentID, err)
 		return err
 	}
 
-	log.Debugf("INSERT gateway_deploy_queue success: (%s)", payload.EntityIdentifier)
+	log.Debugf("INSERT gateway_deploy_queue success: (%s)", deploymentID)
 
 	return nil
 }
@@ -155,7 +160,7 @@ func dbTimeNow() int64 {
 	return int64(time.Now().UnixNano())
 }
 
-func insertDeployment(depID string, manifest bundleManifest) error {
+func insertDeployment(depID string, dep deployment) error {
 
 	tx, err := db.Begin()
 	if err != nil {
@@ -179,21 +184,20 @@ func insertDeployment(depID string, manifest bundleManifest) error {
 	_, err = tx.Exec("INSERT INTO gateway_deploy_bundle " +
 		"(id, deployment_id, type, uri, status, created_at) " +
 		"VALUES(?,?,?,?,?,?);",
-		"sys", depID, BUNDLE_TYPE_SYS, manifest.SysBun.URI, DEPLOYMENT_STATE_INPROG, timeNow)
+		"sys", depID, BUNDLE_TYPE_SYS, dep.System.URI, DEPLOYMENT_STATE_INPROG, timeNow)
 	if err != nil {
 		log.Errorf("INSERT gateway_deploy_bundle %s:%s failed: %v", depID, "sys", err)
 		return err
 	}
 
 	// todo: extra data?
-	for i, bun := range manifest.DepBun {
-		id := string(i)
+	for _, bun := range dep.Bundles {
 		_, err = tx.Exec("INSERT INTO gateway_deploy_bundle " +
 			"(id, deployment_id, scope, type, uri, status, created_at) " +
 			"VALUES(?,?,?,?,?,?,?);",
-			id, depID, bun.Scope, BUNDLE_TYPE_DEP, bun.URI, DEPLOYMENT_STATE_INPROG, timeNow)
+			bun.BundleId, depID, bun.Scope, BUNDLE_TYPE_DEP, bun.URI, DEPLOYMENT_STATE_INPROG, timeNow)
 		if err != nil {
-			log.Errorf("INSERT gateway_deploy_bundle %s:%s failed: %v", depID, id, err)
+			log.Errorf("INSERT gateway_deploy_bundle %s:%s failed: %v", depID, bun.BundleId, err)
 			return err
 		}
 	}
@@ -303,7 +307,6 @@ func getDeployment(depID string) (*deployment, error) {
 		} else {
 			fileUrl := getBundleFilePath(depID, uri)
 			bd := bundle{
-				AuthCode: bundleID, // todo: authCode?
 				BundleId: bundleID,
 				URI:      fileUrl,
 			}

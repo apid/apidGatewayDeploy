@@ -3,18 +3,89 @@ package apiGatewayDeploy
 import (
 	"encoding/json"
 	"github.com/30x/apid"
-	. "github.com/30x/apidApigeeSync" // for direct access to Payload types
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"net/url"
-	"time"
+	"github.com/30x/transicator/common"
 )
 
 var _ = Describe("listener", func() {
 
-	It("should store data from ApigeeSync in the database", func(done Done) {
+	It("should process ApigeeSync snapshot event", func(done Done) {
 
 		deploymentID := "listener_test_1"
+
+		uri, err := url.Parse(testServer.URL)
+		Expect(err).ShouldNot(HaveOccurred())
+		uri.Path = "/bundle"
+		bundleUri := uri.String()
+
+		dep := deployment{
+			DeploymentId: deploymentID,
+			System: bundle{
+				URI: bundleUri,
+			},
+			Bundles: []bundle{
+				{
+					BundleId: "bun",
+					URI: bundleUri,
+					Scope: "some-scope",
+				},
+			},
+		}
+
+		depBytes, err := json.Marshal(dep)
+		Expect(err).ShouldNot(HaveOccurred())
+
+		row := common.Row{}
+		row["id"] = &common.ColumnVal{Value: deploymentID}
+		row["body"] = &common.ColumnVal{Value: string(depBytes)}
+
+		var event = common.Snapshot{}
+		event.Tables = []common.Table{
+			{
+				Name: MANIFEST_TABLE,
+				Rows: []common.Row{row},
+			},
+		}
+
+		h := &test_handler{
+			"checkDatabase",
+			func(e apid.Event) {
+				defer GinkgoRecover()
+
+				// ignore the first event, let standard listener process it
+				changeSet := e.(*common.Snapshot)
+				if len(changeSet.Tables) > 0 {
+					return
+				}
+
+				// force queue to be emptied
+				serviceDeploymentQueue()
+
+				depID, err := getCurrentDeploymentID()
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(depID).Should(Equal(deploymentID))
+
+				dep, err := getDeployment(depID)
+				Expect(err).ShouldNot(HaveOccurred())
+
+				Expect(dep.System.URI).To(Equal(dep.System.URI))
+				Expect(len(dep.Bundles)).To(Equal(len(dep.Bundles)))
+				Expect(dep.Bundles[0].URI).To(Equal(getBundleFilePath(deploymentID, bundleUri)))
+
+				close(done)
+			},
+		}
+
+		apid.Events().Listen(APIGEE_SYNC_EVENT, h)
+		apid.Events().Emit(APIGEE_SYNC_EVENT, &event)              // for standard listener
+		apid.Events().Emit(APIGEE_SYNC_EVENT, &common.Snapshot{}) // for test listener
+ 	})
+
+	It("should process ApigeeSync change event", func(done Done) {
+
+		deploymentID := "listener_test_2"
 
 		uri, err := url.Parse(testServer.URL)
 		Expect(err).ShouldNot(HaveOccurred())
@@ -28,6 +99,7 @@ var _ = Describe("listener", func() {
 			DepBun: []dependantBundle{
 				{
 					URI: bundleUri,
+					Scope: "some-scope",
 				},
 			},
 		}
@@ -35,31 +107,32 @@ var _ = Describe("listener", func() {
 		Expect(err).ShouldNot(HaveOccurred())
 		manifest := string(manBytes)
 
-		now := time.Now().Unix()
-		var event = ChangeSet{}
-		event.Changes = []ChangePayload{
+		row := common.Row{}
+		row["id"] = &common.ColumnVal{Value: deploymentID}
+		row["body"] = &common.ColumnVal{Value: manifest}
+
+		var event = common.ChangeList{}
+		event.Changes = []common.Change{
 			{
-				Data: DataPayload{
-					EntityType:       "deployment",
-					Operation:        "create",
-					EntityIdentifier: deploymentID,
-					PldCont: Payload{
-						CreatedAt: now,
-						Manifest:  manifest,
-					},
-				},
+				Operation: common.Insert,
+				Table: MANIFEST_TABLE,
+				NewRow: row,
 			},
 		}
 
 		h := &test_handler{
 			"checkDatabase",
 			func(e apid.Event) {
+				defer GinkgoRecover()
 
 				// ignore the first event, let standard listener process it
-				changeSet := e.(*ChangeSet)
+				changeSet := e.(*common.ChangeList)
 				if len(changeSet.Changes) > 0 {
 					return
 				}
+
+				// force queue to be emptied
+				serviceDeploymentQueue()
 
 				depID, err := getCurrentDeploymentID()
 				Expect(err).ShouldNot(HaveOccurred())
@@ -72,29 +145,14 @@ var _ = Describe("listener", func() {
 				Expect(len(dep.Bundles)).To(Equal(len(man.DepBun)))
 				Expect(dep.Bundles[0].URI).To(Equal(getBundleFilePath(deploymentID, bundleUri)))
 
-				// todo: should do a lot more checking here... maybe call another api instead?
-				//var selectedManifest string
-				//var createdAt int64
-				//err = db.QueryRow("SELECT manifest, created_at from bundle_deployment where id = ?", deploymentID).
-				//	Scan(&selectedManifest, &createdAt)
-				//Expect(err).ShouldNot(HaveOccurred())
-				//
-				//Expect(manifest).Should(Equal(selectedManifest))
-				//Expect(createdAt).Should(Equal(now))
-
-				// clean up
-				//_, err = db.Exec("DELETE from bundle_deployment where id = ?", deploymentID)
-				//Expect(err).ShouldNot(HaveOccurred())
-
 				close(done)
 			},
 		}
 
-		apid.Events().Listen(ApigeeSyncEventSelector, h)
-		apid.Events().Emit(ApigeeSyncEventSelector, &event)       // for standard listener
-		apid.Events().Emit(ApigeeSyncEventSelector, &ChangeSet{}) // for test listener
+		apid.Events().Listen(APIGEE_SYNC_EVENT, h)
+		apid.Events().Emit(APIGEE_SYNC_EVENT, &event)               // for standard listener
+		apid.Events().Emit(APIGEE_SYNC_EVENT, &common.ChangeList{}) // for test listener
 	})
-
 })
 
 type test_handler struct {

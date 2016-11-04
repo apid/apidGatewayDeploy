@@ -10,6 +10,7 @@ import (
 	"os"
 	"encoding/base64"
 	"path"
+	"errors"
 )
 
 var (
@@ -33,16 +34,20 @@ type bundleManifest struct {
 	DepBun []dependantBundle `json:"bundles"`
 }
 
+// event bundle
 type bundle struct {
-	BundleId string `json:"bundleId"`
-	URI      string `json:"uri"`
-	AuthCode string `json:"authCode,omitempty"`
+	BundleId string  `json:"bundleId"`
+	URI      string  `json:"uri"`
+	Scope    string  `json:"scope"`
+	Org      string  `json:"org"`
+	Env      string  `json:"env"`
 }
 
+// event deployment
 type deployment struct {
 	DeploymentId string   `json:"deploymentId"`
-	Bundles      []bundle `json:"bundles"`
 	System       bundle   `json:"system"`
+	Bundles      []bundle `json:"bundles"`
 }
 
 type deploymentErrorDetail struct {
@@ -96,7 +101,7 @@ func retrieveBundle(uriString string) (io.ReadCloser, error) {
 
 // todo: retry on error?
 // check if already exists and skip
-func prepareBundle(depID string, bun dependantBundle) error {
+func prepareBundle(depID string, bun bundle) error {
 
 	bundleFile := getBundleFilePath(depID, bun.URI)
 	out, err := os.Create(bundleFile)
@@ -132,7 +137,7 @@ func getBundleFilePath(depID string, bundleURI string) string {
 
 // returns first bundle download error
 // all bundles will be attempted regardless of errors, in the future we could retry
-func prepareDeployment(depID string, manifest bundleManifest) error {
+func prepareDeployment(depID string, dep deployment) error {
 
 	deploymentPath := getDeploymentFilesPath(depID)
 	err := os.Mkdir(deploymentPath, 0700)
@@ -143,15 +148,15 @@ func prepareDeployment(depID string, manifest bundleManifest) error {
 
 	// todo: any reason to put all this in a single transaction?
 
-	err = insertDeployment(depID, manifest)
+	err = insertDeployment(depID, dep)
 	if err != nil {
 		log.Errorf("Prepare deployment failed: %v", err)
 		return err
 	}
 
 	// download bundles and store them locally
-	errors := make(chan error, len(manifest.DepBun))
-	for i, bun := range manifest.DepBun {
+	errors := make(chan error, len(dep.Bundles))
+	for i, bun := range dep.Bundles {
 		go func() {
 			err := prepareBundle(depID, bun)
 			errors <- err
@@ -166,7 +171,7 @@ func prepareDeployment(depID string, manifest bundleManifest) error {
 	}
 
 	// fail fast on first error, otherwise wait for completion
-	for range manifest.DepBun {
+	for range dep.Bundles {
 		err := <- errors
 		if err != nil {
 			updateDeploymentStatus(db, depID, DEPLOYMENT_STATE_ERR_APID, ERROR_CODE_TODO)
@@ -186,10 +191,8 @@ func serviceDeploymentQueue() {
 		return
 	}
 
-	var manifest bundleManifest
-	err := json.Unmarshal([]byte(manifestString), &manifest)
+	manifest, err := parseManifest(manifestString)
 	if err != nil {
-		log.Errorf("JSON decoding Manifest failed Err: %v", err)
 		return
 	}
 
@@ -206,4 +209,34 @@ func serviceDeploymentQueue() {
 
 	log.Debugf("Signaling new deployment ready: %s", depID)
 	incoming <- depID
+}
+
+func parseManifest(manifestString string) (dep deployment, err error) {
+	err = json.Unmarshal([]byte(manifestString), &dep)
+	if err != nil {
+		log.Errorf("JSON decoding Manifest failed Err: %v", err)
+		return
+	}
+
+	// todo: validate manifest...
+	if dep.System.URI == "" {
+		err = errors.New("system bundle uri is required")
+		return
+	}
+	for _, bun := range dep.Bundles {
+		if bun.BundleId == "" {
+			err = errors.New("bundle bundleID is required")
+			return
+		}
+		if bun.URI == "" {
+			err = errors.New("bundle uri is required")
+			return
+		}
+		if bun.Scope == "" {
+			err = errors.New("bundle scope is required")
+			return
+		}
+	}
+
+	return
 }

@@ -4,10 +4,10 @@ import (
 	"flag"
 	"github.com/30x/apid"
 	"github.com/30x/apid/factory"
-	"github.com/30x/apidApigeeSync"
 	_ "github.com/30x/apidGatewayDeploy"
 	"io/ioutil"
-	"time"
+	"github.com/30x/transicator/common"
+	"github.com/30x/apidGatewayDeploy"
 )
 
 func main() {
@@ -22,13 +22,6 @@ func main() {
 	log.Debug("initializing...")
 
 	config := apid.Config()
-
-	// todo: This will change after apidApigeeSync is fixed for scopes
-	config.SetDefault("apigeesync_proxy_server_base", "X")
-	config.SetDefault("apigeesync_organization", "X")
-	config.SetDefault("apigeesync_consumer_key", "X")
-	config.SetDefault("apigeesync_consumer_secret", "X")
-	config.SetDefault("apigeesync_log_level", "panic")
 
 	// if manifest is specified, start with only the manifest using a temp dir
 	var manifest []byte
@@ -71,20 +64,17 @@ func main() {
 
 func insertTestRecord(manifest []byte) {
 
-	now := time.Now().Unix()
-	var event = apidApigeeSync.ChangeSet{}
-	event.Changes = []apidApigeeSync.ChangePayload{
+	row := common.Row{}
+	row["id"] = &common.ColumnVal{Value: "deploymentID"}
+	row["body"] = &common.ColumnVal{Value: string(manifest)}
+
+	var event = common.Snapshot{}
+	event.Tables = []common.Table{
 		{
-			Data: apidApigeeSync.DataPayload{
-				EntityType:       "deployment",
-				Operation:        "create",
-				EntityIdentifier: "entityID",
-				PldCont: apidApigeeSync.Payload{
-					CreatedAt: now,
-					Manifest:  string(manifest),
-				},
-			},
+			Name: apiGatewayDeploy.MANIFEST_TABLE,
+			Rows: []common.Row{row},
 		},
 	}
-	apid.Events().Emit(apidApigeeSync.ApigeeSyncEventSelector, &event)
+
+	apid.Events().Emit(apiGatewayDeploy.APIGEE_SYNC_EVENT, &event)
 }

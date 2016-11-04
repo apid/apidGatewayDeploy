@@ -102,6 +102,8 @@ var _ = Describe("api", func() {
 
 			deploymentID = "api_get_current_blocking2"
 			go func() {
+				defer GinkgoRecover()
+
 				query := uri.Query()
 				query.Add("block", "1")
 				uri.RawQuery = query.Encode()
@@ -264,19 +266,23 @@ func insertTestDeployment(server *httptest.Server, depID string) {
 	uri.Path = "/bundle"
 	bundleUri := uri.String()
 
-	manifest := bundleManifest{
-		systemBundle{
-			bundleUri,
+	dep := deployment{
+		DeploymentId: depID,
+		System: bundle{
+			URI: bundleUri,
 		},
-		[]dependantBundle{
+		Bundles: []bundle{
 			{
-				bundleUri,
-				"some-scope",
+				BundleId: "bun",
+				URI: bundleUri,
+				Scope: "some-scope",
+				Org: "org",
+				Env: "env",
 			},
 		},
 	}
 
-	err = insertDeployment(depID, manifest)
+	err = insertDeployment(depID, dep)
 	Expect(err).ShouldNot(HaveOccurred())
 
 	err = updateDeploymentStatus(db, depID, DEPLOYMENT_STATE_READY, 0)

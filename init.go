@@ -55,6 +55,7 @@ func initPlugin(services apid.Services) error {
 	initAPI(services)
 	initListener(services)
 
+	// todo: in goroutine?
 	serviceDeploymentQueue()
 
 	log.Debug("end init")

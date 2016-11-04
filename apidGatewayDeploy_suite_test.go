@@ -23,12 +23,12 @@ var _ = BeforeSuite(func() {
 
 	config := apid.Config()
 
-	// todo: This will change after apidApigeeSync is fixed for scopes
 	config.SetDefault("apigeesync_proxy_server_base", "X")
-	config.SetDefault("apigeesync_organization", "X")
 	config.SetDefault("apigeesync_consumer_key", "X")
 	config.SetDefault("apigeesync_consumer_secret", "X")
-	config.SetDefault("apigeesync_log_level", "panic")
+	config.SetDefault("apigeesync_snapshot_server_base", "X")
+	config.SetDefault("apigeesync_change_server_base", "X")
+	config.SetDefault("apigeesync_log_level", "info")
 
 	var err error
 	tmpDir, err = ioutil.TempDir("", "api_test")
