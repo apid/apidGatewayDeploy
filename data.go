@@ -152,7 +152,7 @@ func getQueuedDeployment() (depID, manifestString string) {
 
 func deleteDeploymentFromQueue(depID string) {
 
-	log.Debug("deleting deployment %s from queue", depID)
+	log.Debugf("deleting deployment %s from queue", depID)
 
 	_, err := db.Exec("DELETE FROM gateway_deploy_queue WHERE id=?;", depID)
 	if err != nil {
@@ -160,7 +160,7 @@ func deleteDeploymentFromQueue(depID string) {
 		return
 	}
 
-	log.Debug("deleted deployment %s from queue", depID)
+	log.Debugf("deleted deployment %s from queue", depID)
 }
 
 func dbTimeNow() int64 {
