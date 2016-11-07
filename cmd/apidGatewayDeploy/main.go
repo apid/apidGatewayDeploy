@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"github.com/30x/transicator/common"
 	"github.com/30x/apidGatewayDeploy"
+	"os"
 )
 
 func main() {
@@ -38,6 +39,7 @@ func main() {
 		if err != nil {
 			log.Panicf("ERROR: Unable to create temp dir", err)
 		}
+		defer os.RemoveAll(tmpDir)
 		config.Set("data_path", tmpDir)
 		config.Set("gatewaydeploy_bundle_dir", tmpDir)
 	}

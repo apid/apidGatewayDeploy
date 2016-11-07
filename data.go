@@ -33,7 +33,7 @@ Deployment:
 
 Tables:
 	gateway_deploy_queue
-		Deployment(s) received and not yet processed (potentially a Queue - one for now)
+		Deployment(s) received and not yet processed (one for now)
 	gateway_deploy_deployment
 	gateway_deploy_bundle
  */
@@ -61,6 +61,7 @@ func initDB() {
 		log.Panicf("Unable to start transaction: %v", err)
 	}
 	defer tx.Rollback()
+
 	_, err = tx.Exec("CREATE TABLE gateway_deploy_queue (" +
 		"id varchar(255), manifest text, created_at integer, " +
 		"PRIMARY KEY (id));")
@@ -94,6 +95,9 @@ func initDB() {
 // currently only maintains 1 in the queue
 func queueDeployment(deploymentID, manifestString string) error {
 
+	queueMutex.Lock()
+	defer queueMutex.Unlock()
+
 	log.Debugf("queuing deployment %s: %s", deploymentID, manifestString)
 
 	// validate manifest
@@ -103,20 +107,14 @@ func queueDeployment(deploymentID, manifestString string) error {
 	}
 
 	// maintains queue at 1
-	tx, err := db.Begin()
-	if err != nil {
-		log.Debugf("INSERT gateway_deploy_queue failed: (%s)", deploymentID)
-		return err
-	}
-	defer tx.Rollback()
-
-	_, err = tx.Exec("DELETE FROM gateway_deploy_queue");
+	// todo: this should be transactional
+	_, err = db.Exec("DELETE FROM gateway_deploy_queue");
 	if err != nil {
 		log.Errorf("DELETE FROM gateway_deploy_queue failed: %v", err)
 		return err
 	}
 
-	_, err = tx.Exec("INSERT INTO gateway_deploy_queue (id, manifest, created_at) VALUES (?,?,?);",
+	_, err = db.Exec("INSERT INTO gateway_deploy_queue (id, manifest, created_at) VALUES (?,?,?);",
 		deploymentID,
 		manifestString,
 		dbTimeNow(),
@@ -126,34 +124,43 @@ func queueDeployment(deploymentID, manifestString string) error {
 		return err
 	}
 
-	err = tx.Commit()
-	if err != nil {
-		log.Errorf("INSERT gateway_deploy_queue %s failed: %v", deploymentID, err)
-		return err
-	}
-
-	log.Debugf("INSERT gateway_deploy_queue success: (%s)", deploymentID)
+	log.Debugf("deployment %s queued", deploymentID)
 
 	return nil
 }
 
+// committing passed transaction will delete deployment from queue
+// Call using the following guard:
 func getQueuedDeployment() (depID, manifestString string) {
+
+	log.Debug("getting queued deployment")
+
 	err := db.QueryRow("SELECT id, manifest FROM gateway_deploy_queue ORDER BY created_at ASC LIMIT 1;").
 		Scan(&depID, &manifestString)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			log.Info("No Deployments available to be processed")
 		} else {
-			// todo: panic?
-			log.Errorf("SELECT on BUNDLE_DEPLOYMENT failed with Err: %s", err)
+			log.Errorf("SELECT on gateway_deploy_queue failed: %s", err)
 		}
 	}
+
+	log.Debugf("got queued deployment: %s", depID)
+
 	return
 }
 
-func dequeueDeployment(depID string) error {
+func deleteDeploymentFromQueue(depID string) {
+
+	log.Debug("deleting deployment %s from queue", depID)
+
 	_, err := db.Exec("DELETE FROM gateway_deploy_queue WHERE id=?;", depID)
-	return err
+	if err != nil {
+		log.Errorf("DELETE from gateway_deploy_queue failed: %s", err)
+		return
+	}
+
+	log.Debug("deleted deployment %s from queue", depID)
 }
 
 func dbTimeNow() int64 {
@@ -164,7 +171,7 @@ func insertDeployment(depID string, dep deployment) error {
 
 	tx, err := db.Begin()
 	if err != nil {
-		log.Errorf("INSERT gateway_deploy_deployment %s failed: %v", depID, err)
+		log.Errorf("insertDeployment begin transaction failed: %v", depID, err)
 		return err
 	}
 	defer tx.Rollback()
@@ -184,9 +191,9 @@ func insertDeployment(depID string, dep deployment) error {
 	_, err = tx.Exec("INSERT INTO gateway_deploy_bundle " +
 		"(id, deployment_id, type, uri, status, created_at) " +
 		"VALUES(?,?,?,?,?,?);",
-		"sys", depID, BUNDLE_TYPE_SYS, dep.System.URI, DEPLOYMENT_STATE_INPROG, timeNow)
+		dep.System.BundleID, depID, BUNDLE_TYPE_SYS, dep.System.URI, DEPLOYMENT_STATE_INPROG, timeNow)
 	if err != nil {
-		log.Errorf("INSERT gateway_deploy_bundle %s:%s failed: %v", depID, "sys", err)
+		log.Errorf("INSERT gateway_deploy_bundle %s:%s failed: %v", depID, dep.System.BundleID, err)
 		return err
 	}
 
@@ -195,19 +202,19 @@ func insertDeployment(depID string, dep deployment) error {
 		_, err = tx.Exec("INSERT INTO gateway_deploy_bundle " +
 			"(id, deployment_id, scope, type, uri, status, created_at) " +
 			"VALUES(?,?,?,?,?,?,?);",
-			bun.BundleId, depID, bun.Scope, BUNDLE_TYPE_DEP, bun.URI, DEPLOYMENT_STATE_INPROG, timeNow)
+			bun.BundleID, depID, bun.Scope, BUNDLE_TYPE_DEP, bun.URI, DEPLOYMENT_STATE_INPROG, timeNow)
 		if err != nil {
-			log.Errorf("INSERT gateway_deploy_bundle %s:%s failed: %v", depID, bun.BundleId, err)
+			log.Errorf("INSERT gateway_deploy_bundle %s:%s failed: %v", depID, bun.BundleID, err)
 			return err
 		}
 	}
 
-	log.Debugf("INSERT gateway_deploy_deployment %s succeeded", depID)
-
 	err = tx.Commit()
 	if err != nil {
-		log.Errorf("INSERT gateway_deploy_bundle %s failed: %v", depID)
+		log.Errorf("commit insert to gateway_deploy_bundle %s failed: %v", depID, err)
 	}
+
+	log.Debugf("INSERT gateway_deploy_deployment %s succeeded", depID)
 
 	return err
 }
@@ -288,7 +295,7 @@ func getDeployment(depID string) (*deployment, error) {
 
 	depRes := deployment{
 		Bundles:      []bundle{},
-		DeploymentId: depID,
+		DeploymentID: depID,
 	}
 
 	for rows.Next() {
@@ -301,13 +308,13 @@ func getDeployment(depID string) (*deployment, error) {
 		}
 		if bundleType == BUNDLE_TYPE_SYS {
 			depRes.System = bundle{
-				BundleId: bundleID,
+				BundleID: bundleID,
 				URI:      uri,
 			}
 		} else {
 			fileUrl := getBundleFilePath(depID, uri)
 			bd := bundle{
-				BundleId: bundleID,
+				BundleID: bundleID,
 				URI:      fileUrl,
 			}
 			depRes.Bundles = append(depRes.Bundles, bd)

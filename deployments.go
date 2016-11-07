@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"path"
 	"errors"
+	"sync"
 )
 
 var (
@@ -36,7 +37,7 @@ type bundleManifest struct {
 
 // event bundle
 type bundle struct {
-	BundleId string  `json:"bundleId"`
+	BundleID string  `json:"bundleId"`
 	URI      string  `json:"uri"`
 	Scope    string  `json:"scope"`
 	Org      string  `json:"org"`
@@ -45,7 +46,7 @@ type bundle struct {
 
 // event deployment
 type deployment struct {
-	DeploymentId string   `json:"deploymentId"`
+	DeploymentID string   `json:"deploymentId"`
 	System       bundle   `json:"system"`
 	Bundles      []bundle `json:"bundles"`
 }
@@ -53,7 +54,7 @@ type deployment struct {
 type deploymentErrorDetail struct {
 	ErrorCode int    `json:"errorCode"`
 	Reason    string `json:"reason"`
-	BundleId  string `json:"bundleId"`
+	BundleID  string `json:"bundleId"`
 }
 
 type deploymentErrorResponse struct {
@@ -63,8 +64,8 @@ type deploymentErrorResponse struct {
 }
 
 type deploymentResponse struct {
-	Status   string                  `json:"status"`
-	GWbunRsp deploymentErrorResponse `json:"error"`
+	Status string                  `json:"status"`
+	Error  deploymentErrorResponse `json:"error"`
 }
 
 // retrieveBundle retrieves bundle data from a URI
@@ -139,27 +140,27 @@ func getBundleFilePath(depID string, bundleURI string) string {
 // all bundles will be attempted regardless of errors, in the future we could retry
 func prepareDeployment(depID string, dep deployment) error {
 
+	log.Debugf("preparing deployment: %s", depID)
+
+	err := insertDeployment(depID, dep)
+	if err != nil {
+		log.Errorf("insert deployment failed: %v", err)
+		return err
+	}
+
 	deploymentPath := getDeploymentFilesPath(depID)
-	err := os.Mkdir(deploymentPath, 0700)
+	err = os.Mkdir(deploymentPath, 0700)
 	if err != nil {
 		log.Errorf("Deployment dir creation failed: %v", err)
 		return err
 	}
 
-	// todo: any reason to put all this in a single transaction?
-
-	err = insertDeployment(depID, dep)
-	if err != nil {
-		log.Errorf("Prepare deployment failed: %v", err)
-		return err
-	}
-
 	// download bundles and store them locally
-	errors := make(chan error, len(dep.Bundles))
+	errorsChan := make(chan error, len(dep.Bundles))
 	for i, bun := range dep.Bundles {
 		go func() {
 			err := prepareBundle(depID, bun)
-			errors <- err
+			errorsChan <- err
 			if err != nil {
 				id := string(i)
 				err = updateBundleStatus(db, depID, id, DEPLOYMENT_STATE_ERR_APID, ERROR_CODE_TODO, err.Error())
@@ -172,7 +173,7 @@ func prepareDeployment(depID string, dep deployment) error {
 
 	// fail fast on first error, otherwise wait for completion
 	for range dep.Bundles {
-		err := <- errors
+		err := <-errorsChan
 		if err != nil {
 			updateDeploymentStatus(db, depID, DEPLOYMENT_STATE_ERR_APID, ERROR_CODE_TODO)
 			return err
@@ -182,10 +183,16 @@ func prepareDeployment(depID string, dep deployment) error {
 	return updateDeploymentStatus(db, depID, DEPLOYMENT_STATE_READY, 0)
 }
 
+var queueMutex sync.Mutex
 
 func serviceDeploymentQueue() {
+
+	queueMutex.Lock()
+	defer queueMutex.Unlock()
+
 	log.Debug("Checking for new deployments")
 
+	// todo: this does a get+delete - could lead to a missing deployment if there's a failure
 	depID, manifestString := getQueuedDeployment()
 	if depID == "" {
 		return
@@ -198,14 +205,11 @@ func serviceDeploymentQueue() {
 
 	err = prepareDeployment(depID, manifest)
 	if err != nil {
-		log.Errorf("Prepare deployment failed: %v", depID)
+		log.Errorf("serviceDeploymentQueue prepare deployment failed: %v", depID)
 		return
 	}
 
-	err = dequeueDeployment(depID)
-	if err != nil {
-		log.Warnf("Dequeue deployment failed: %v", depID)
-	}
+	deleteDeploymentFromQueue(depID)
 
 	log.Debugf("Signaling new deployment ready: %s", depID)
 	incoming <- depID
@@ -218,22 +222,22 @@ func parseManifest(manifestString string) (dep deployment, err error) {
 		return
 	}
 
-	// todo: validate manifest...
+	// validate manifest
 	if dep.System.URI == "" {
-		err = errors.New("system bundle uri is required")
+		err = errors.New("system bundle 'uri' is required")
 		return
 	}
 	for _, bun := range dep.Bundles {
-		if bun.BundleId == "" {
-			err = errors.New("bundle bundleID is required")
+		if bun.BundleID == "" {
+			err = errors.New("bundle 'bundleId' is required")
 			return
 		}
 		if bun.URI == "" {
-			err = errors.New("bundle uri is required")
+			err = errors.New("bundle 'uri' is required")
 			return
 		}
 		if bun.Scope == "" {
-			err = errors.New("bundle scope is required")
+			err = errors.New("bundle 'scope' is required")
 			return
 		}
 	}

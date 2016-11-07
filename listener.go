@@ -38,7 +38,7 @@ func processSnapshot(snapshot *common.Snapshot) {
 		var err error
 		switch table.Name {
 		case MANIFEST_TABLE:
-			log.Debugf("Snapshot of %s with %d rows", table.Name, table.Rows)
+			log.Debugf("Snapshot of %s with %d rows", table.Name, len(table.Rows))
 			// todo: should be 0 or 1 per system!!
 			row := table.Rows[len(table.Rows)-1]
 			err = processNewManifest(row)
@@ -52,10 +52,9 @@ func processSnapshot(snapshot *common.Snapshot) {
 }
 
 func processChangeList(changes *common.ChangeList) {
-	log.Debugf("Process %d changes", len(changes.Changes))
 
 	for _, change := range changes.Changes {
-		log.Debugf("payload table: %s operation: %s", change.Table, change.Operation)
+		log.Debugf("change table: %s operation: %s", change.Table, change.Operation)
 
 		var err error
 		switch change.Table {
@@ -63,6 +62,8 @@ func processChangeList(changes *common.ChangeList) {
 			switch change.Operation {
 			case common.Insert:
 				err = processNewManifest(change.NewRow)
+			default:
+				log.Error("unexpected operation: %s", change.Operation)
 			}
 		}
 		if err != nil {

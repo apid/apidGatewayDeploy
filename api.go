@@ -195,7 +195,7 @@ func handleDeploymentResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if rsp.Status == RESPONSE_STATUS_FAIL && (rsp.GWbunRsp.ErrorCode == 0 || rsp.GWbunRsp.Reason == "") {
+	if rsp.Status == RESPONSE_STATUS_FAIL && (rsp.Error.ErrorCode == 0 || rsp.Error.Reason == "") {
 		writeError(w, http.StatusBadRequest, ERROR_CODE_TODO, "errorCode and reason are required")
 		return
 	}
@@ -215,7 +215,7 @@ func handleDeploymentResult(w http.ResponseWriter, r *http.Request) {
 	if rsp.Status == RESPONSE_STATUS_SUCCESS {
 		updateErr = updateDeploymentSuccess(depID, txn)
 	} else {
-		updateErr = updateDeploymentFailure(depID, rsp.GWbunRsp, txn)
+		updateErr = updateDeploymentFailure(depID, rsp.Error, txn)
 	}
 
 	if updateErr != nil {
@@ -268,7 +268,7 @@ func updateDeploymentFailure(depID string, rsp deploymentErrorResponse, txn *sql
 
 	// Iterate over Bundles, and update the errors
 	for _, a := range rsp.ErrorDetails {
-		updateBundleStatus(txn, depID, a.BundleId, DEPLOYMENT_STATE_ERR_GWY, a.ErrorCode, a.Reason)
+		updateBundleStatus(txn, depID, a.BundleID, DEPLOYMENT_STATE_ERR_GWY, a.ErrorCode, a.Reason)
 		if err != nil {
 			return err
 		}

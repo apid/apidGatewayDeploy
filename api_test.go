@@ -48,7 +48,7 @@ var _ = Describe("api", func() {
 			Expect(err).ShouldNot(HaveOccurred())
 			json.Unmarshal(body, &depRes)
 
-			Expect(depRes.DeploymentId).Should(Equal(deploymentID))
+			Expect(depRes.DeploymentID).Should(Equal(deploymentID))
 			Expect(res.Header.Get("etag")).Should(Equal(deploymentID))
 		})
 
@@ -121,7 +121,7 @@ var _ = Describe("api", func() {
 				Expect(err).ShouldNot(HaveOccurred())
 				json.Unmarshal(body, &depRes)
 
-				Expect(depRes.DeploymentId).Should(Equal(deploymentID))
+				Expect(depRes.DeploymentID).Should(Equal(deploymentID))
 
 				close(done)
 			}()
@@ -226,7 +226,7 @@ var _ = Describe("api", func() {
 
 			deploymentResult := deploymentResponse{
 				Status: RESPONSE_STATUS_FAIL,
-				GWbunRsp: deploymentErrorResponse{
+				Error: deploymentErrorResponse{
 					ErrorCode: 100,
 					Reason: "bad juju",
 					//ErrorDetails: []deploymentErrorDetail{ // todo: add tests for bundle errors
@@ -267,13 +267,13 @@ func insertTestDeployment(server *httptest.Server, depID string) {
 	bundleUri := uri.String()
 
 	dep := deployment{
-		DeploymentId: depID,
+		DeploymentID: depID,
 		System: bundle{
 			URI: bundleUri,
 		},
 		Bundles: []bundle{
 			{
-				BundleId: "bun",
+				BundleID: "bun",
 				URI: bundleUri,
 				Scope: "some-scope",
 				Org: "org",

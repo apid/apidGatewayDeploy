@@ -1,11 +1,11 @@
 package apiGatewayDeploy
 
 import (
-	"database/sql"
 	"github.com/30x/apid"
 	"github.com/30x/apidGatewayDeploy/github"
 	"os"
 	"path/filepath"
+	"database/sql"
 )
 
 const (
@@ -55,8 +55,7 @@ func initPlugin(services apid.Services) error {
 	initAPI(services)
 	initListener(services)
 
-	// todo: in goroutine?
-	serviceDeploymentQueue()
+	go serviceDeploymentQueue()
 
 	log.Debug("end init")
 

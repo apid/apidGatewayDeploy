@@ -9,6 +9,9 @@ import (
 	"github.com/30x/transicator/common"
 )
 
+// todo: test servicing the deployment queue
+// todo: ensure "database table is locked" doesn't happen (check the test logs)
+
 var _ = Describe("listener", func() {
 
 	It("should process ApigeeSync snapshot event", func(done Done) {
@@ -21,13 +24,13 @@ var _ = Describe("listener", func() {
 		bundleUri := uri.String()
 
 		dep := deployment{
-			DeploymentId: deploymentID,
+			DeploymentID: deploymentID,
 			System: bundle{
 				URI: bundleUri,
 			},
 			Bundles: []bundle{
 				{
-					BundleId: "bun",
+					BundleID: "bun",
 					URI: bundleUri,
 					Scope: "some-scope",
 				},
@@ -50,29 +53,20 @@ var _ = Describe("listener", func() {
 		}
 
 		h := &test_handler{
-			"checkDatabase",
+			deploymentID,
 			func(e apid.Event) {
 				defer GinkgoRecover()
 
 				// ignore the first event, let standard listener process it
-				changeSet := e.(*common.Snapshot)
-				if len(changeSet.Tables) > 0 {
+				changeSet, ok := e.(*common.Snapshot)
+				if !ok || len(changeSet.Tables) > 0 {
 					return
 				}
 
-				// force queue to be emptied
-				serviceDeploymentQueue()
-
-				depID, err := getCurrentDeploymentID()
 				Expect(err).ShouldNot(HaveOccurred())
+				depID, manString := getQueuedDeployment()
 				Expect(depID).Should(Equal(deploymentID))
-
-				dep, err := getDeployment(depID)
-				Expect(err).ShouldNot(HaveOccurred())
-
-				Expect(dep.System.URI).To(Equal(dep.System.URI))
-				Expect(len(dep.Bundles)).To(Equal(len(dep.Bundles)))
-				Expect(dep.Bundles[0].URI).To(Equal(getBundleFilePath(deploymentID, bundleUri)))
+				Expect(manString).Should(Equal(string(depBytes)))
 
 				close(done)
 			},
@@ -92,24 +86,26 @@ var _ = Describe("listener", func() {
 		uri.Path = "/bundle"
 		bundleUri := uri.String()
 
-		man := bundleManifest{
-			SysBun: systemBundle{
+		dep := deployment{
+			DeploymentID: deploymentID,
+			System: bundle{
 				URI: bundleUri,
 			},
-			DepBun: []dependantBundle{
+			Bundles: []bundle{
 				{
+					BundleID: "bun",
 					URI: bundleUri,
 					Scope: "some-scope",
 				},
 			},
 		}
-		manBytes, err := json.Marshal(man)
+
+		depBytes, err := json.Marshal(dep)
 		Expect(err).ShouldNot(HaveOccurred())
-		manifest := string(manBytes)
 
 		row := common.Row{}
 		row["id"] = &common.ColumnVal{Value: deploymentID}
-		row["body"] = &common.ColumnVal{Value: manifest}
+		row["body"] = &common.ColumnVal{Value: string(depBytes)}
 
 		var event = common.ChangeList{}
 		event.Changes = []common.Change{
@@ -121,29 +117,19 @@ var _ = Describe("listener", func() {
 		}
 
 		h := &test_handler{
-			"checkDatabase",
+			deploymentID,
 			func(e apid.Event) {
 				defer GinkgoRecover()
 
 				// ignore the first event, let standard listener process it
-				changeSet := e.(*common.ChangeList)
-				if len(changeSet.Changes) > 0 {
+				changeSet, ok := e.(*common.ChangeList)
+				if !ok || len(changeSet.Changes) > 0 {
 					return
 				}
 
-				// force queue to be emptied
-				serviceDeploymentQueue()
-
-				depID, err := getCurrentDeploymentID()
-				Expect(err).ShouldNot(HaveOccurred())
+				depID, manString := getQueuedDeployment()
 				Expect(depID).Should(Equal(deploymentID))
-
-				dep, err := getDeployment(depID)
-				Expect(err).ShouldNot(HaveOccurred())
-
-				Expect(dep.System.URI).To(Equal(man.SysBun.URI))
-				Expect(len(dep.Bundles)).To(Equal(len(man.DepBun)))
-				Expect(dep.Bundles[0].URI).To(Equal(getBundleFilePath(deploymentID, bundleUri)))
+				Expect(manString).Should(Equal(string(depBytes)))
 
 				close(done)
 			},
