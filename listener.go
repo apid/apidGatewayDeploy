@@ -39,6 +39,9 @@ func processSnapshot(snapshot *common.Snapshot) {
 		switch table.Name {
 		case MANIFEST_TABLE:
 			log.Debugf("Snapshot of %s with %d rows", table.Name, len(table.Rows))
+			if len(table.Rows) == 0 {
+				return
+			}
 			// todo: should be 0 or 1 per system!!
 			row := table.Rows[len(table.Rows)-1]
 			err = processNewManifest(row)
