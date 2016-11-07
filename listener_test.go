@@ -42,7 +42,7 @@ var _ = Describe("listener", func() {
 
 		row := common.Row{}
 		row["id"] = &common.ColumnVal{Value: deploymentID}
-		row["body"] = &common.ColumnVal{Value: string(depBytes)}
+		row["manifest_body"] = &common.ColumnVal{Value: string(depBytes)}
 
 		var event = common.Snapshot{}
 		event.Tables = []common.Table{
@@ -105,7 +105,7 @@ var _ = Describe("listener", func() {
 
 		row := common.Row{}
 		row["id"] = &common.ColumnVal{Value: deploymentID}
-		row["body"] = &common.ColumnVal{Value: string(depBytes)}
+		row["manifest_body"] = &common.ColumnVal{Value: string(depBytes)}
 
 		var event = common.ChangeList{}
 		event.Changes = []common.Change{

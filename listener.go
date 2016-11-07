@@ -7,7 +7,7 @@ import (
 
 const (
 	APIGEE_SYNC_EVENT = "ApigeeSync"
-	MANIFEST_TABLE = "edgex.apid_config_manifest"
+	MANIFEST_TABLE = "edgex.apid_config_manifest_deployment"
 )
 
 func initListener(services apid.Services) {
@@ -79,7 +79,7 @@ func processNewManifest(row common.Row) error {
 	if err != nil {
 		return err
 	}
-	err = row.Get("body", &manifest)
+	err = row.Get("manifest_body", &manifest)
 	if err != nil {
 		return err
 	}
