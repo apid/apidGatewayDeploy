@@ -6,7 +6,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"net/url"
-	"github.com/30x/transicator/common"
+	"github.com/apigee-labs/transicator/common"
 )
 
 // todo: test servicing the deployment queue

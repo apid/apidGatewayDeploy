@@ -6,7 +6,7 @@ import (
 	"github.com/30x/apid/factory"
 	_ "github.com/30x/apidGatewayDeploy"
 	"io/ioutil"
-	"github.com/30x/transicator/common"
+	"github.com/apigee-labs/transicator/common"
 	"github.com/30x/apidGatewayDeploy"
 	"os"
 )
