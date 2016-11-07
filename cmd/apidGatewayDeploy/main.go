@@ -68,7 +68,7 @@ func insertTestRecord(manifest []byte) {
 
 	row := common.Row{}
 	row["id"] = &common.ColumnVal{Value: "deploymentID"}
-	row["body"] = &common.ColumnVal{Value: string(manifest)}
+	row["manifest_body"] = &common.ColumnVal{Value: string(manifest)}
 
 	var event = common.Snapshot{}
 	event.Tables = []common.Table{
