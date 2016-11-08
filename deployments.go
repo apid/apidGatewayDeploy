@@ -100,7 +100,7 @@ func retrieveBundle(uriString string) (io.ReadCloser, error) {
 	return github.GetUrlData(uri, gitHubAccessToken)
 }
 
-// todo: retry on error?
+// todo: retry on error
 // check if already exists and skip
 func prepareBundle(depID string, bun bundle) error {
 
@@ -141,6 +141,11 @@ func getBundleFilePath(depID string, bundleURI string) string {
 func prepareDeployment(depID string, dep deployment) error {
 
 	log.Debugf("preparing deployment: %s", depID)
+
+	getTableLocker("gateway_deploy_deployment").Lock()
+	defer getTableLocker("gateway_deploy_deployment").Unlock()
+	getTableLocker("gateway_deploy_bundle").Lock()
+	defer getTableLocker("gateway_deploy_bundle").Unlock()
 
 	err := insertDeployment(depID, dep)
 	if err != nil {
@@ -192,7 +197,6 @@ func serviceDeploymentQueue() {
 
 	log.Debug("Checking for new deployments")
 
-	// todo: this does a get+delete - could lead to a missing deployment if there's a failure
 	depID, manifestString := getQueuedDeployment()
 	if depID == "" {
 		return

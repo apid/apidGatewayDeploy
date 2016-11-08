@@ -3,6 +3,7 @@ package apiGatewayDeploy
 import (
 	"database/sql"
 	"time"
+	"sync"
 )
 
 const (
@@ -56,6 +57,8 @@ func initDB() {
 		return
 	}
 
+	log.Debug("Creating database tables...")
+
 	tx, err := db.Begin()
 	if err != nil {
 		log.Panicf("Unable to start transaction: %v", err)
@@ -89,16 +92,34 @@ func initDB() {
 	err = tx.Commit()
 	if err != nil {
 		log.Panicf("Unable to commit transaction: %v", err)
+	} else {
+		log.Debug("Database tables created.")
 	}
+}
+
+var tableLocksLock sync.Mutex
+var tableLocks map[string]*sync.Mutex = map[string]*sync.Mutex{}
+
+func getTableLocker(table string) sync.Locker {
+	tableLocksLock.Lock()
+	defer tableLocksLock.Unlock()
+
+	lock := tableLocks[table]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		tableLocks[table] = lock
+	}
+
+	return lock
 }
 
 // currently only maintains 1 in the queue
 func queueDeployment(deploymentID, manifestString string) error {
 
-	queueMutex.Lock()
-	defer queueMutex.Unlock()
-
 	log.Debugf("queuing deployment %s: %s", deploymentID, manifestString)
+
+	getTableLocker("gateway_deploy_queue").Lock()
+	defer getTableLocker("gateway_deploy_queue").Unlock()
 
 	// validate manifest
 	_, err := parseManifest(manifestString)
@@ -135,6 +156,9 @@ func getQueuedDeployment() (depID, manifestString string) {
 
 	log.Debug("getting queued deployment")
 
+	getTableLocker("gateway_deploy_queue").Lock()
+	defer getTableLocker("gateway_deploy_queue").Unlock()
+
 	err := db.QueryRow("SELECT id, manifest FROM gateway_deploy_queue ORDER BY created_at ASC LIMIT 1;").
 		Scan(&depID, &manifestString)
 	if err != nil {
@@ -154,6 +178,9 @@ func deleteDeploymentFromQueue(depID string) {
 
 	log.Debugf("deleting deployment %s from queue", depID)
 
+	getTableLocker("gateway_deploy_queue").Lock()
+	defer getTableLocker("gateway_deploy_queue").Unlock()
+
 	_, err := db.Exec("DELETE FROM gateway_deploy_queue WHERE id=?;", depID)
 	if err != nil {
 		log.Errorf("DELETE from gateway_deploy_queue failed: %s", err)
@@ -168,6 +195,13 @@ func dbTimeNow() int64 {
 }
 
 func insertDeployment(depID string, dep deployment) error {
+
+	log.Debugf("insertDeployment: %s", depID)
+
+	getTableLocker("gateway_deploy_deployment").Lock()
+	defer getTableLocker("gateway_deploy_deployment").Unlock()
+	getTableLocker("gateway_deploy_bundle").Lock()
+	defer getTableLocker("gateway_deploy_bundle").Unlock()
 
 	tx, err := db.Begin()
 	if err != nil {
@@ -189,9 +223,9 @@ func insertDeployment(depID string, dep deployment) error {
 	// system bundle
 	// todo: extra data?
 	_, err = tx.Exec("INSERT INTO gateway_deploy_bundle " +
-		"(id, deployment_id, type, uri, status, created_at) " +
-		"VALUES(?,?,?,?,?,?);",
-		dep.System.BundleID, depID, BUNDLE_TYPE_SYS, dep.System.URI, DEPLOYMENT_STATE_INPROG, timeNow)
+		"(id, deployment_id, scope, type, uri, status, created_at) " +
+		"VALUES(?,?,?,?,?,?,?);",
+		dep.System.BundleID, depID, dep.System.Scope, BUNDLE_TYPE_SYS, dep.System.URI, DEPLOYMENT_STATE_INPROG, timeNow)
 	if err != nil {
 		log.Errorf("INSERT gateway_deploy_bundle %s:%s failed: %v", depID, dep.System.BundleID, err)
 		return err
@@ -219,7 +253,62 @@ func insertDeployment(depID string, dep deployment) error {
 	return err
 }
 
+func updateDeploymentAndBundles(depID string, rsp deploymentResponse) error {
+
+	log.Debugf("updateDeploymentAndBundles: %s", depID)
+
+	getTableLocker("gateway_deploy_deployment").Lock()
+	defer getTableLocker("gateway_deploy_deployment").Unlock()
+	getTableLocker("gateway_deploy_bundle").Lock()
+	defer getTableLocker("gateway_deploy_bundle").Unlock()
+
+	/*
+	 * If the state of deployment was success, update state of bundles and
+	 * its deployments as success as well
+	 */
+	txn, err := db.Begin()
+	if err != nil {
+		log.Errorf("Unable to begin transaction: %s", err)
+		return err
+	}
+	defer txn.Rollback()
+
+	if rsp.Status == RESPONSE_STATUS_SUCCESS {
+		err := updateDeploymentStatus(txn, depID, DEPLOYMENT_STATE_SUCCESS, 0)
+		if err != nil {
+			return err
+		}
+		err = updateAllBundleStatus(txn, depID, DEPLOYMENT_STATE_SUCCESS)
+		if err != nil {
+			return err
+		}
+	} else {
+		err := updateDeploymentStatus(txn, depID, DEPLOYMENT_STATE_ERR_GWY, rsp.Error.ErrorCode)
+		if err != nil {
+			return err
+		}
+
+		// Iterate over Bundles, and update the errors
+		for _, a := range rsp.Error.ErrorDetails {
+			updateBundleStatus(txn, depID, a.BundleID, DEPLOYMENT_STATE_ERR_GWY, a.ErrorCode, a.Reason)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	if err != nil {
+		return err
+	}
+
+	err = txn.Commit()
+	if err != nil {
+		log.Errorf("Unable to commit updateDeploymentStatus transaction: %s", err)
+	}
+	return err
+}
+
 func updateDeploymentStatus(txn SQLExec, depID string, status int, errCode int) error {
+
 	var nRows int64
 	res, err := txn.Exec("UPDATE gateway_deploy_deployment " +
 		"SET status=?, modified_at=?, error_code = ? WHERE id=?;", status, dbTimeNow(), errCode, depID)
@@ -277,6 +366,7 @@ func updateBundleStatus(txn SQLExec, depID string, bundleID string, status int, 
 
 // getCurrentDeploymentID returns the ID of what should be the "current" deployment
 func getCurrentDeploymentID() (string, error) {
+
 	var depID string
 	err := db.QueryRow("SELECT id FROM gateway_deploy_deployment " +
 		"WHERE status >= ? ORDER BY created_at DESC LIMIT 1;", DEPLOYMENT_STATE_READY).Scan(&depID)
@@ -287,7 +377,7 @@ func getCurrentDeploymentID() (string, error) {
 // getDeployment returns a fully populated deploymentResponse
 func getDeployment(depID string) (*deployment, error) {
 
-	rows, err := db.Query("SELECT id, type, uri FROM gateway_deploy_bundle WHERE deployment_id=?;", depID)
+	rows, err := db.Query("SELECT id, type, uri, COALESCE(scope, '') as scope FROM gateway_deploy_bundle WHERE deployment_id=?;", depID)
 	if err != nil {
 		log.Errorf("Unable to query gateway_deploy_bundle. Err: %s", err)
 		return nil, err
@@ -300,8 +390,8 @@ func getDeployment(depID string) (*deployment, error) {
 
 	for rows.Next() {
 		var bundleType int
-		var bundleID, uri string
-		err = rows.Scan(&bundleID, &bundleType, &uri)
+		var bundleID, uri, scope string
+		err = rows.Scan(&bundleID, &bundleType, &uri, &scope)
 		if err != nil {
 			log.Errorf("gateway_deploy_bundle fetch failed. Err: %s", err)
 			return nil, err
@@ -316,6 +406,7 @@ func getDeployment(depID string) (*deployment, error) {
 			bd := bundle{
 				BundleID: bundleID,
 				URI:      fileUrl,
+				Scope:    scope,
 			}
 			depRes.Bundles = append(depRes.Bundles, bd)
 		}

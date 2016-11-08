@@ -10,7 +10,6 @@ import (
 )
 
 // todo: test servicing the deployment queue
-// todo: ensure "database table is locked" doesn't happen (check the test logs)
 
 var _ = Describe("listener", func() {
 

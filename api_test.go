@@ -49,6 +49,11 @@ var _ = Describe("api", func() {
 			json.Unmarshal(body, &depRes)
 
 			Expect(depRes.DeploymentID).Should(Equal(deploymentID))
+			Expect(depRes.Bundles[0].Scope).Should(Equal("some-scope"))
+			// todo: scope, org, env, etc... need to be dealt with abstractly
+			//Expect(depRes.Bundles[0].Org).Should(Equal("org"))
+			//Expect(depRes.Bundles[0].Env).Should(Equal("env"))
+
 			Expect(res.Header.Get("etag")).Should(Equal(deploymentID))
 		})
 
@@ -267,7 +272,6 @@ func insertTestDeployment(server *httptest.Server, depID string) {
 	bundleUri := uri.String()
 
 	dep := deployment{
-		DeploymentID: depID,
 		System: bundle{
 			URI: bundleUri,
 		},

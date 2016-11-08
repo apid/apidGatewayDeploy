@@ -200,79 +200,14 @@ func handleDeploymentResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	/*
-	 * If the state of deployment was success, update state of bundles and
-	 * its deployments as success as well
-	 */
-	txn, err := db.Begin()
+	err = updateDeploymentAndBundles(depID, rsp)
 	if err != nil {
-		log.Errorf("Unable to begin transaction: %s", err)
-		writeDatabaseError(w)
-		return
-	}
-
-	var updateErr error
-	if rsp.Status == RESPONSE_STATUS_SUCCESS {
-		updateErr = updateDeploymentSuccess(depID, txn)
-	} else {
-		updateErr = updateDeploymentFailure(depID, rsp.Error, txn)
-	}
-
-	if updateErr != nil {
-		if updateErr == sql.ErrNoRows {
+		if err == sql.ErrNoRows {
 			writeError(w, http.StatusNotFound, ERROR_CODE_TODO, "not found")
 		} else {
 			writeDatabaseError(w)
 		}
-		err = txn.Rollback()
-		if err != nil {
-			log.Errorf("Unable to rollback transaction: %s", err)
-		}
-		return
-	}
-
-	err = txn.Commit()
-	if err != nil {
-		log.Errorf("Unable to commit transaction: %s", err)
-		writeDatabaseError(w)
 	}
 
 	return
-}
-
-func updateDeploymentSuccess(depID string, txn *sql.Tx) error {
-
-	log.Debugf("Marking deployment %s as succeeded", depID)
-
-	err := updateDeploymentStatus(txn, depID, DEPLOYMENT_STATE_SUCCESS, 0)
-	if err != nil {
-		return err
-	}
-
-	err = updateAllBundleStatus(txn, depID, DEPLOYMENT_STATE_SUCCESS)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func updateDeploymentFailure(depID string, rsp deploymentErrorResponse, txn *sql.Tx) error {
-
-	log.Infof("marking deployment %s as FAILED", depID)
-
-	err := updateDeploymentStatus(txn, depID, DEPLOYMENT_STATE_ERR_GWY, rsp.ErrorCode)
-	if err != nil {
-		return err
-	}
-
-	// Iterate over Bundles, and update the errors
-	for _, a := range rsp.ErrorDetails {
-		updateBundleStatus(txn, depID, a.BundleID, DEPLOYMENT_STATE_ERR_GWY, a.ErrorCode, a.Reason)
-		if err != nil {
-			return err
-		}
-	}
-
-	return err
 }
