@@ -55,8 +55,6 @@ func initPlugin(services apid.Services) error {
 	initAPI(services)
 	initListener(services)
 
-	go serviceDeploymentQueue()
-
 	log.Debug("end init")
 
 	return nil

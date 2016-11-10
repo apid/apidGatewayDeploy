@@ -11,7 +11,6 @@ import (
 	"encoding/base64"
 	"path"
 	"errors"
-	"sync"
 )
 
 var (
@@ -142,11 +141,6 @@ func prepareDeployment(depID string, dep deployment) error {
 
 	log.Debugf("preparing deployment: %s", depID)
 
-	getTableLocker("gateway_deploy_deployment").Lock()
-	defer getTableLocker("gateway_deploy_deployment").Unlock()
-	getTableLocker("gateway_deploy_bundle").Lock()
-	defer getTableLocker("gateway_deploy_bundle").Unlock()
-
 	err := insertDeployment(depID, dep)
 	if err != nil {
 		log.Errorf("insert deployment failed: %v", err)
@@ -186,37 +180,6 @@ func prepareDeployment(depID string, dep deployment) error {
 	}
 
 	return updateDeploymentStatus(db, depID, DEPLOYMENT_STATE_READY, 0)
-}
-
-var queueMutex sync.Mutex
-
-func serviceDeploymentQueue() {
-
-	queueMutex.Lock()
-	defer queueMutex.Unlock()
-
-	log.Debug("Checking for new deployments")
-
-	depID, manifestString := getQueuedDeployment()
-	if depID == "" {
-		return
-	}
-
-	manifest, err := parseManifest(manifestString)
-	if err != nil {
-		return
-	}
-
-	err = prepareDeployment(depID, manifest)
-	if err != nil {
-		log.Errorf("serviceDeploymentQueue prepare deployment failed: %v", depID)
-		return
-	}
-
-	deleteDeploymentFromQueue(depID)
-
-	log.Debugf("Signaling new deployment ready: %s", depID)
-	incoming <- depID
 }
 
 func parseManifest(manifestString string) (dep deployment, err error) {

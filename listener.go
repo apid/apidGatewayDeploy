@@ -87,11 +87,30 @@ func processNewManifest(row common.Row) error {
 		return err
 	}
 
-	err = queueDeployment(deploymentID, manifest)
-
-	if err == nil {
-		go serviceDeploymentQueue()
-	}
+	//err = queueDeployment(deploymentID, manifest)
+	//
+	//if err == nil {
+	//	go serviceDeploymentQueue()
+	//}
+	bypassQueue(deploymentID, manifest)
 
 	return err
+}
+
+
+func bypassQueue(depID, manifestString string) {
+
+	manifest, err := parseManifest(manifestString)
+	if err != nil {
+		return
+	}
+
+	err = prepareDeployment(depID, manifest)
+	if err != nil {
+		log.Errorf("serviceDeploymentQueue prepare deployment failed: %v", depID)
+		return
+	}
+
+	log.Debugf("Signaling new deployment ready: %s", depID)
+	incoming <- depID
 }

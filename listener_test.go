@@ -9,8 +9,6 @@ import (
 	"github.com/apigee-labs/transicator/common"
 )
 
-// todo: test servicing the deployment queue
-
 var _ = Describe("listener", func() {
 
 	It("should process ApigeeSync snapshot event", func(done Done) {
@@ -62,10 +60,9 @@ var _ = Describe("listener", func() {
 					return
 				}
 
+				depID, err := getCurrentDeploymentID()
 				Expect(err).ShouldNot(HaveOccurred())
-				depID, manString := getQueuedDeployment()
 				Expect(depID).Should(Equal(deploymentID))
-				Expect(manString).Should(Equal(string(depBytes)))
 
 				close(done)
 			},
@@ -126,9 +123,9 @@ var _ = Describe("listener", func() {
 					return
 				}
 
-				depID, manString := getQueuedDeployment()
+				depID, err := getCurrentDeploymentID()
+				Expect(err).ShouldNot(HaveOccurred())
 				Expect(depID).Should(Equal(deploymentID))
-				Expect(manString).Should(Equal(string(depBytes)))
 
 				close(done)
 			},

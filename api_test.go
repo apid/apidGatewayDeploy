@@ -215,6 +215,7 @@ var _ = Describe("api", func() {
 
 			rows, err := db.Query("SELECT status from gateway_deploy_bundle WHERE id = ?;", deploymentID)
 			Expect(err).ShouldNot(HaveOccurred())
+			defer rows.Close()
 			for rows.Next() {
 				rows.Scan(&deployStatus)
 				Expect(deployStatus).Should(Equal(DEPLOYMENT_STATE_SUCCESS))
