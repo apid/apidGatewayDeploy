@@ -23,13 +23,6 @@ var _ = BeforeSuite(func() {
 
 	config := apid.Config()
 
-	config.SetDefault("apigeesync_proxy_server_base", "X")
-	config.SetDefault("apigeesync_consumer_key", "X")
-	config.SetDefault("apigeesync_consumer_secret", "X")
-	config.SetDefault("apigeesync_snapshot_server_base", "X")
-	config.SetDefault("apigeesync_change_server_base", "X")
-	config.SetDefault("apigeesync_log_level", "info")
-
 	var err error
 	tmpDir, err = ioutil.TempDir("", "api_test")
 	Expect(err).NotTo(HaveOccurred())
