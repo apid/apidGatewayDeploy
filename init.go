@@ -4,12 +4,12 @@ import (
 	"github.com/30x/apid"
 	"github.com/30x/apidGatewayDeploy/github"
 	"os"
-	"path/filepath"
 	"database/sql"
+	"path"
 )
 
 const (
-	configBundleDir         = "gatewaydeploy_bundle_dir"
+	configBundleDirKey      = "gatewaydeploy_bundle_dir"
 	configGithubAccessToken = "gatewaydeploy_github_accesstoken"
 )
 
@@ -29,17 +29,15 @@ func initPlugin(services apid.Services) error {
 	github.Init(services)
 
 	config := services.Config()
-	config.SetDefault(configBundleDir, "/var/tmp")
+	config.SetDefault(configBundleDirKey, "bundles")
 
 	var err error
-	dir := config.GetString(configBundleDir)
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	relativeBundlePath := config.GetString(configBundleDirKey)
+	if err := os.MkdirAll(relativeBundlePath, 0700); err != nil {
 		log.Panicf("Failed bundle directory creation: %v", err)
 	}
-	bundlePath, err = filepath.Abs(dir)
-	if err != nil {
-		log.Panicf("Cant find Abs Path : %v", err)
-	}
+	storagePath := config.GetString("local_storage_path")
+	bundlePath := path.Join(storagePath, relativeBundlePath)
 	log.Infof("Bundle directory path is %s", bundlePath)
 
 	gitHubAccessToken = config.GetString(configGithubAccessToken)

@@ -27,8 +27,7 @@ var _ = BeforeSuite(func() {
 	tmpDir, err = ioutil.TempDir("", "api_test")
 	Expect(err).NotTo(HaveOccurred())
 
-	config.Set("data_path", tmpDir)
-	config.Set(configBundleDir, tmpDir)
+	config.Set("local_storage_path", tmpDir)
 
 	// init() will create the tables
 	apid.InitializePlugins()
