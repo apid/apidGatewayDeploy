@@ -1,10 +1,10 @@
 package apiGatewayDeploy
 
 import (
+	"database/sql"
 	"github.com/30x/apid"
 	"github.com/30x/apidGatewayDeploy/github"
 	"os"
-	"database/sql"
 	"path"
 )
 
@@ -14,8 +14,9 @@ const (
 )
 
 var (
-	log apid.LogService
-	db  *sql.DB
+	log        apid.LogService
+	db         *sql.DB
+	bundlePath string
 )
 
 func init() {
@@ -37,7 +38,7 @@ func initPlugin(services apid.Services) error {
 		log.Panicf("Failed bundle directory creation: %v", err)
 	}
 	storagePath := config.GetString("local_storage_path")
-	bundlePath := path.Join(storagePath, relativeBundlePath)
+	bundlePath = path.Join(storagePath, relativeBundlePath)
 	log.Infof("Bundle directory path is %s", bundlePath)
 
 	gitHubAccessToken = config.GetString(configGithubAccessToken)

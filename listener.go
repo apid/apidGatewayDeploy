@@ -77,40 +77,30 @@ func processChangeList(changes *common.ChangeList) {
 
 func processNewManifest(row common.Row) error {
 
-	var deploymentID, manifest string
+	var deploymentID, manifestString string
 	err := row.Get("id", &deploymentID)
 	if err != nil {
 		return err
 	}
-	err = row.Get("manifest_body", &manifest)
+	err = row.Get("manifest_body", &manifestString)
 	if err != nil {
 		return err
 	}
 
-	//err = queueDeployment(deploymentID, manifest)
-	//
-	//if err == nil {
-	//	go serviceDeploymentQueue()
-	//}
-	bypassQueue(deploymentID, manifest)
-
-	return err
-}
-
-
-func bypassQueue(depID, manifestString string) {
-
 	manifest, err := parseManifest(manifestString)
 	if err != nil {
-		return
+		log.Errorf("error parsing manifest: %v", err)
+		return err
 	}
 
-	err = prepareDeployment(depID, manifest)
+	err = prepareDeployment(deploymentID, manifest)
 	if err != nil {
-		log.Errorf("serviceDeploymentQueue prepare deployment failed: %v", depID)
-		return
+		log.Errorf("serviceDeploymentQueue prepare deployment failed: %s", deploymentID)
+		return err
 	}
 
-	log.Debugf("Signaling new deployment ready: %s", depID)
-	incoming <- depID
+	log.Debugf("Signaling new deployment ready: %s", deploymentID)
+	incoming <- deploymentID
+
+	return nil
 }

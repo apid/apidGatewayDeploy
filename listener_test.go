@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 	"net/url"
 	"github.com/apigee-labs/transicator/common"
+	"io/ioutil"
 )
 
 var _ = Describe("listener", func() {
@@ -17,18 +18,25 @@ var _ = Describe("listener", func() {
 
 		uri, err := url.Parse(testServer.URL)
 		Expect(err).ShouldNot(HaveOccurred())
-		uri.Path = "/bundle"
-		bundleUri := uri.String()
+		uri.Path = "/bundle/1"
+		bundleUri1 := uri.String()
+		uri.Path = "/bundle/2"
+		bundleUri2 := uri.String()
 
 		dep := deployment{
 			DeploymentID: deploymentID,
 			System: bundle{
-				URI: bundleUri,
+				URI: "whatever",
 			},
 			Bundles: []bundle{
 				{
-					BundleID: "bun",
-					URI: bundleUri,
+					BundleID: "/bundle/1",
+					URI: bundleUri1,
+					Scope: "some-scope",
+				},
+				{
+					BundleID: "/bundle/2",
+					URI: bundleUri2,
 					Scope: "some-scope",
 				},
 			},
@@ -60,9 +68,7 @@ var _ = Describe("listener", func() {
 					return
 				}
 
-				depID, err := getCurrentDeploymentID()
-				Expect(err).ShouldNot(HaveOccurred())
-				Expect(depID).Should(Equal(deploymentID))
+				testDeployment(dep)
 
 				close(done)
 			},
@@ -79,7 +85,7 @@ var _ = Describe("listener", func() {
 
 		uri, err := url.Parse(testServer.URL)
 		Expect(err).ShouldNot(HaveOccurred())
-		uri.Path = "/bundle"
+		uri.Path = "/bundle/1"
 		bundleUri := uri.String()
 
 		dep := deployment{
@@ -89,7 +95,7 @@ var _ = Describe("listener", func() {
 			},
 			Bundles: []bundle{
 				{
-					BundleID: "bun",
+					BundleID: "/bundle/1",
 					URI: bundleUri,
 					Scope: "some-scope",
 				},
@@ -123,9 +129,7 @@ var _ = Describe("listener", func() {
 					return
 				}
 
-				depID, err := getCurrentDeploymentID()
-				Expect(err).ShouldNot(HaveOccurred())
-				Expect(depID).Should(Equal(deploymentID))
+				testDeployment(dep)
 
 				close(done)
 			},
@@ -148,4 +152,24 @@ func (t *test_handler) String() string {
 
 func (t *test_handler) Handle(event apid.Event) {
 	t.f(event)
+}
+
+func testDeployment(dep deployment) {
+
+	depID, err := getCurrentDeploymentID()
+	Expect(err).ShouldNot(HaveOccurred())
+	Expect(depID).Should(Equal(dep.DeploymentID))
+
+	deployment, err := getDeployment(depID)
+	Expect(deployment.Bundles).To(HaveLen(len(dep.Bundles)))
+
+	for _, b := range dep.Bundles {
+		bundleFile := getBundleFilePath(depID, b.URI)
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(bundleFile).To(BeARegularFile())
+
+		bytes, err := ioutil.ReadFile(bundleFile)
+		Expect(err).ShouldNot(HaveOccurred())
+		Expect(string(bytes)).Should(Equal(b.BundleID))
+	}
 }

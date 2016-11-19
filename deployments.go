@@ -11,11 +11,17 @@ import (
 	"encoding/base64"
 	"path"
 	"errors"
+	"io/ioutil"
+	"time"
+)
+
+const (
+	DOWNLOAD_ATTEMPTS = 3
 )
 
 var (
-	bundlePath string
-	gitHubAccessToken string // todo: temporary - should come from Manifest
+	gitHubAccessToken string // todo: temporary - will not be used
+	downloadMultiplier = 10 * time.Second
 )
 
 type systemBundle struct {
@@ -68,12 +74,11 @@ type deploymentResponse struct {
 }
 
 // retrieveBundle retrieves bundle data from a URI
-func retrieveBundle(uriString string) (io.ReadCloser, error) {
+func getBundleReader(uriString string) (io.ReadCloser, error) {
 
 	uri, err := url.Parse(uriString)
 	if err != nil {
 		return nil, fmt.Errorf("DownloadFileUrl: Failed to parse urlStr: %s", uriString)
-
 	}
 
 	// todo: temporary - if not a github url, just open it or call GET on it
@@ -92,6 +97,9 @@ func retrieveBundle(uriString string) (io.ReadCloser, error) {
 		if err != nil {
 			return nil, err
 		}
+		if res.StatusCode != 200 {
+			return nil, fmt.Errorf("Bundle uri %s failed with status %s", uriString, res.StatusCode)
+		}
 		return res.Body, nil
 	}
 
@@ -99,28 +107,67 @@ func retrieveBundle(uriString string) (io.ReadCloser, error) {
 	return github.GetUrlData(uri, gitHubAccessToken)
 }
 
-// todo: retry on error
 // check if already exists and skip
 func prepareBundle(depID string, bun bundle) error {
 
 	bundleFile := getBundleFilePath(depID, bun.URI)
-	out, err := os.Create(bundleFile)
+	bundleDir := path.Dir(bundleFile)
+
+	downloadBundle := func() (fileName string, err error) {
+
+		log.Debugf("Downloading bundle: %s", bun.URI)
+
+		var tempFile *os.File
+		tempFile, err = ioutil.TempFile(bundleDir, "download")
+		if err != nil {
+			log.Errorf("Unable to create temp file: %v", err)
+			return
+		}
+		fileName = tempFile.Name()
+
+		var bundleReader io.ReadCloser
+		bundleReader, err = getBundleReader(bun.URI)
+		if err != nil {
+			log.Errorf("Unable to retrieve bundle %s: %v", bun.URI, err)
+			return
+		}
+		defer bundleReader.Close()
+
+		_, err = io.Copy(tempFile, bundleReader)
+		if err != nil {
+			log.Errorf("Unable to write bundle %s: %v", tempFile, err)
+		}
+
+		return
+	}
+
+	// retry
+	var tempFile string
+	var err error
+	for i := 1; i <= DOWNLOAD_ATTEMPTS; i++ {
+		tempFile, err = downloadBundle()
+		if err == nil {
+			break
+		}
+		if tempFile != "" {
+			os.Remove(tempFile)
+		}
+
+		// simple back-off, we could potentially be more sophisticated
+		retryIn := time.Duration(i) * downloadMultiplier
+		log.Debugf("will retry download in %s", retryIn)
+		time.Sleep(retryIn)
+	}
+
 	if err != nil {
-		log.Errorf("Unable to create bundle file %s, Err: %s", bundleFile, err)
+		log.Errorf("failed %s download attempts. aborting.", DOWNLOAD_ATTEMPTS)
 		return err
 	}
-	defer out.Close()
 
-	bundleData, err := retrieveBundle(bun.URI)
+	err = os.Rename(tempFile, bundleFile)
 	if err != nil {
-		log.Errorf("Unable to retrieve bundle %s, Err: %s", bun.URI, err)
-		return err
-	}
-	defer bundleData.Close()
-
-	_, err = io.Copy(out, bundleData)
-	if err != nil {
-		log.Errorf("Unable to write bundle %s, Err: %s", bundleFile, err)
+		log.Errorf("Unable to rename temp bundle file %s to %s: %s", tempFile, bundleFile, err)
+		os.Remove(tempFile)
 		return err
 	}
 
@@ -128,7 +175,7 @@ func prepareBundle(depID string, bun bundle) error {
 }
 
 func getDeploymentFilesPath(depID string) string {
-	return bundlePath + "/" + depID
+	return path.Join(bundlePath, depID)
 }
 
 func getBundleFilePath(depID string, bundleURI string) string {
@@ -148,7 +195,7 @@ func prepareDeployment(depID string, dep deployment) error {
 	}
 
 	deploymentPath := getDeploymentFilesPath(depID)
-	err = os.Mkdir(deploymentPath, 0700)
+	err = os.MkdirAll(deploymentPath, 0700)
 	if err != nil {
 		log.Errorf("Deployment dir creation failed: %v", err)
 		return err
@@ -156,7 +203,8 @@ func prepareDeployment(depID string, dep deployment) error {
 
 	// download bundles and store them locally
 	errorsChan := make(chan error, len(dep.Bundles))
-	for i, bun := range dep.Bundles {
+	for i := range dep.Bundles {
+		bun := dep.Bundles[i]
 		go func() {
 			err := prepareBundle(depID, bun)
 			errorsChan <- err
@@ -185,7 +233,7 @@ func prepareDeployment(depID string, dep deployment) error {
 func parseManifest(manifestString string) (dep deployment, err error) {
 	err = json.Unmarshal([]byte(manifestString), &dep)
 	if err != nil {
-		log.Errorf("JSON decoding Manifest failed Err: %v", err)
+		log.Errorf("JSON decoding Manifest failed: %v", err)
 		return
 	}
 

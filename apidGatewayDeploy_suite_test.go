@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 )
 
 var (
@@ -33,9 +34,17 @@ var _ = BeforeSuite(func() {
 	apid.InitializePlugins()
 
 	router := apid.API().Router()
-	// fake bundle repo
-	router.HandleFunc("/bundle", func(w http.ResponseWriter, req *http.Request) {
-		w.Write([]byte("bundle stuff"))
+	// fake unreliable bundle repo
+	downloadMultiplier = 10 * time.Millisecond
+	count := 0
+	router.HandleFunc("/bundle/{id}", func(w http.ResponseWriter, req *http.Request) {
+		count++
+		if count % 2 == 0 {
+			w.WriteHeader(500)
+			return
+		}
+		vars := apid.API().Vars(req)
+		w.Write([]byte("/bundle/" + vars["id"]))
 	})
 	testServer = httptest.NewServer(router)
 })
