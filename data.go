@@ -20,8 +20,6 @@ type SQLExec interface {
 	Exec(query string, args ...interface{}) (sql.Result, error)
 }
 
-// todo: should we have some kind of deployment log instead of just a status?
-
 func initDB() {
 
 	var count int
@@ -92,7 +90,7 @@ func insertDeployment(depID string, dep deployment) error {
 	}
 
 	// system bundle
-	// todo: extra data?
+	// todo: extra data? TBD
 	_, err = tx.Exec("INSERT INTO gateway_deploy_bundle " +
 		"(id, deployment_id, scope, type, uri, status, created_at) " +
 		"VALUES(?,?,?,?,?,?,?);",
@@ -102,7 +100,7 @@ func insertDeployment(depID string, dep deployment) error {
 		return err
 	}
 
-	// todo: extra data?
+	// todo: extra data? TBD
 	for _, bun := range dep.Bundles {
 		_, err = tx.Exec("INSERT INTO gateway_deploy_bundle " +
 			"(id, deployment_id, scope, type, uri, status, created_at) " +

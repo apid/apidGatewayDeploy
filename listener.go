@@ -42,7 +42,7 @@ func processSnapshot(snapshot *common.Snapshot) {
 			if len(table.Rows) == 0 {
 				return
 			}
-			// todo: should be 0 or 1 per system!!
+			// todo: should be 0 or 1 *per system*!! - TBD
 			row := table.Rows[len(table.Rows)-1]
 			err = processNewManifest(row)
 		}

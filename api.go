@@ -149,7 +149,6 @@ func handleCurrentDeployment(w http.ResponseWriter, r *http.Request) {
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}
-		return
 	}
 }
 
@@ -170,7 +169,7 @@ func sendDeployment(w http.ResponseWriter, depID string) {
 	}
 }
 
-// todo: we'll need to transmit results back to Edge somehow...
+// todo: we'll need to transmit results back to Edge somehow - TBD
 func handleDeploymentResult(w http.ResponseWriter, r *http.Request) {
 
 	depID := apid.API().Vars(r)["deploymentID"]
