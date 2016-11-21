@@ -99,8 +99,5 @@ func processNewManifest(row common.Row) error {
 		return err
 	}
 
-	log.Debugf("Signaling new deployment ready: %s", deploymentID)
-	incoming <- deploymentID
-
 	return nil
 }

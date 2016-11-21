@@ -59,11 +59,12 @@ func distributeEvents() {
 		case msg := <-incoming:
 			log.Debugf("Delivering new deployment %s to %d subscribers", msg, len(subscribers))
 			for subscriber := range subscribers {
+				delete(subscribers, subscriber) // all subscriptions are one-time notify
 				select {
 				case subscriber <- msg:
 					log.Debugf("Handling deploy response for: %s", msg)
 				default:
-					log.Error("listener too far behind, message dropped")
+					log.Debugf("listener too far behind, message dropped")
 				}
 			}
 		case subscriber := <-addSubscriber:
