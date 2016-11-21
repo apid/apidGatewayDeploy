@@ -99,6 +99,13 @@ func handleCurrentDeployment(w http.ResponseWriter, r *http.Request) {
 	priorDepID := r.Header.Get("If-None-Match")
 	log.Debugf("if-none-match: %s", priorDepID)
 
+	// subscribe to new deployments in case we need it
+	var newReq chan string
+	if timeout > 0 && priorDepID != "" {
+		newReq = make(chan string)
+		addSubscriber <- newReq
+	}
+
 	depID, err := getCurrentDeploymentID()
 	if err != nil && err != sql.ErrNoRows{
 		writeDatabaseError(w)
@@ -126,15 +133,8 @@ func handleCurrentDeployment(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// can't send immediately, we need to block...
-	// todo: can we kill the timer & channel if client connection is lost?
-	// todo: resolve race condition - may miss a notification
-
+	// can't send immediately, wait for the subscription
 	log.Debug("Blocking request... Waiting for new Deployments.")
-	newReq := make(chan string)
-
-	// subscribe to new deployments
-	addSubscriber <- newReq
 
 	// block until new deployment or timeout
 	select {
