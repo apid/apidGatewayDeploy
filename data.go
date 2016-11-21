@@ -131,13 +131,11 @@ func updateDeploymentAndBundles(depID string, rsp deploymentResponse) error {
 	 * If the state of deployment was success, update state of bundles and
 	 * its deployments as success as well
 	 */
-	log.Print("begin 3")
 	txn, err := db.Begin()
 	if err != nil {
 		log.Errorf("Unable to begin transaction: %s", err)
 		return err
 	}
-	log.Print("began 3")
 	defer txn.Rollback()
 
 	if rsp.Status == RESPONSE_STATUS_SUCCESS {
@@ -167,7 +165,6 @@ func updateDeploymentAndBundles(depID string, rsp deploymentResponse) error {
 		return err
 	}
 
-	log.Print("commit 3")
 	err = txn.Commit()
 	if err != nil {
 		log.Errorf("Unable to commit updateDeploymentStatus transaction: %s", err)
