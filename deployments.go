@@ -15,6 +15,8 @@ import (
 	"time"
 )
 
+// todo: remove downloaded bundle files from old deployments
+
 const (
 	DOWNLOAD_ATTEMPTS = 3
 )
