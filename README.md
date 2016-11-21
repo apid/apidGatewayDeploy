@@ -41,7 +41,6 @@ Once the process is running, you should be able to manually give the plugin's AP
 The following may be interesting env vars for configuration:
 
 * APID_API_PORT
-* APID_GATEWAYDEPLOY_GITHUB_ACCESSTOKEN
 
 ## Running tests
 
