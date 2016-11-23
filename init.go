@@ -1,7 +1,6 @@
 package apiGatewayDeploy
 
 import (
-	"database/sql"
 	"github.com/30x/apid"
 	"github.com/30x/apidGatewayDeploy/github"
 	"os"
@@ -15,7 +14,7 @@ const (
 
 var (
 	log        apid.LogService
-	db         *sql.DB
+	db         apid.DB
 	bundlePath string
 )
 
