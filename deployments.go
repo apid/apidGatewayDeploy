@@ -3,7 +3,6 @@ package apiGatewayDeploy
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/30x/apidGatewayDeploy/github"
 	"io"
 	"net/http"
 	"net/url"
@@ -22,7 +21,6 @@ const (
 )
 
 var (
-	gitHubAccessToken string // todo: temporary - will not be used
 	downloadMultiplier = 10 * time.Second
 )
 
@@ -83,30 +81,26 @@ func getBundleReader(uriString string) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("DownloadFileUrl: Failed to parse urlStr: %s", uriString)
 	}
 
-	// todo: temporary - if not a github url, just open it or call GET on it
-	if uri.Host != "github.com" {
-		// assume it's a file if no scheme
-		if uri.Scheme == "" || uri.Scheme == "file" {
-			f, err := os.Open(uri.Path)
-			if err != nil {
-				return nil, err
-			}
-			return f, nil
-		}
+	// todo: Temporary blind bundle download, Bundle storage TBD
 
-		// some random uri, try to GET it
-		res, err := http.Get(uriString)
+	// assume it's a file if no scheme
+	if uri.Scheme == "" || uri.Scheme == "file" {
+		f, err := os.Open(uri.Path)
 		if err != nil {
 			return nil, err
 		}
-		if res.StatusCode != 200 {
-			return nil, fmt.Errorf("Bundle uri %s failed with status %s", uriString, res.StatusCode)
-		}
-		return res.Body, nil
+		return f, nil
 	}
 
-	// go get it from github using access token
-	return github.GetUrlData(uri, gitHubAccessToken)
+	// some random uri, try to GET it
+	res, err := http.Get(uriString)
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode != 200 {
+		return nil, fmt.Errorf("Bundle uri %s failed with status %s", uriString, res.StatusCode)
+	}
+	return res.Body, nil
 }
 
 // check if already exists and skip

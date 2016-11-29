@@ -2,14 +2,12 @@ package apiGatewayDeploy
 
 import (
 	"github.com/30x/apid"
-	"github.com/30x/apidGatewayDeploy/github"
 	"os"
 	"path"
 )
 
 const (
-	configBundleDirKey      = "gatewaydeploy_bundle_dir"
-	configGithubAccessToken = "gatewaydeploy_github_accesstoken"
+	configBundleDirKey = "gatewaydeploy_bundle_dir"
 )
 
 var (
@@ -26,8 +24,6 @@ func initPlugin(services apid.Services) error {
 	log = services.Log().ForModule("apiGatewayDeploy")
 	log.Debug("start init")
 
-	github.Init(services)
-
 	config := services.Config()
 	config.SetDefault(configBundleDirKey, "bundles")
 
@@ -39,8 +35,6 @@ func initPlugin(services apid.Services) error {
 	storagePath := config.GetString("local_storage_path")
 	bundlePath = path.Join(storagePath, relativeBundlePath)
 	log.Infof("Bundle directory path is %s", bundlePath)
-
-	gitHubAccessToken = config.GetString(configGithubAccessToken)
 
 	db, err = services.Data().DB()
 	if err != nil {
