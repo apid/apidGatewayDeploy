@@ -28,11 +28,20 @@ func (h *apigeeSyncHandler) Handle(e apid.Event) {
 	} else if snapData, ok := e.(*common.Snapshot); ok {
 		processSnapshot(snapData)
 	} else {
-		log.Errorf("Received invalid event: %v", e)
+		log.Errorf("Received invalid event. Ignoring. %v", e)
 	}
 }
 
 func processSnapshot(snapshot *common.Snapshot) {
+
+	log.Debugf("Snapshot received. Switching to DB version: %s", snapshot.SnapshotInfo)
+
+	db, err := data.DBVersion(snapshot.SnapshotInfo)
+	if err != nil {
+		log.Panicf("Unable to access database: %v", err)
+	}
+
+	initDB(db)
 
 	for _, table := range snapshot.Tables {
 		var err error
@@ -44,18 +53,20 @@ func processSnapshot(snapshot *common.Snapshot) {
 			}
 			// todo: should be 0 or 1 *per system*!! - TBD
 			row := table.Rows[len(table.Rows)-1]
-			err = processNewManifest(row)
+			err = processNewManifest(db, row)
 		}
 		if err != nil {
 			log.Panicf("Error processing Snapshot: %v", err)
 		}
 	}
 
+	setDB(db)
 	log.Debug("Snapshot processed")
 }
 
 func processChangeList(changes *common.ChangeList) {
 
+	db := getDB()
 	for _, change := range changes.Changes {
 		log.Debugf("change table: %s operation: %s", change.Table, change.Operation)
 
@@ -64,7 +75,7 @@ func processChangeList(changes *common.ChangeList) {
 		case MANIFEST_TABLE:
 			switch change.Operation {
 			case common.Insert:
-				err = processNewManifest(change.NewRow)
+				err = processNewManifest(db, change.NewRow)
 			default:
 				log.Error("unexpected operation: %s", change.Operation)
 			}
@@ -75,7 +86,7 @@ func processChangeList(changes *common.ChangeList) {
 	}
 }
 
-func processNewManifest(row common.Row) error {
+func processNewManifest(db apid.DB, row common.Row) error {
 
 	var deploymentID, manifestString string
 	err := row.Get("id", &deploymentID)
@@ -93,7 +104,7 @@ func processNewManifest(row common.Row) error {
 		return err
 	}
 
-	err = prepareDeployment(deploymentID, manifest)
+	err = prepareDeployment(db, deploymentID, manifest)
 	if err != nil {
 		log.Errorf("serviceDeploymentQueue prepare deployment failed: %s", deploymentID)
 		return err

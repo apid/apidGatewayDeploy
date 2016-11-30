@@ -11,8 +11,9 @@ const (
 )
 
 var (
+	services   apid.Services
 	log        apid.LogService
-	db         apid.DB
+	data       apid.DataService
 	bundlePath string
 )
 
@@ -20,14 +21,16 @@ func init() {
 	apid.RegisterPlugin(initPlugin)
 }
 
-func initPlugin(services apid.Services) error {
+func initPlugin(s apid.Services) error {
+	services = s
 	log = services.Log().ForModule("apiGatewayDeploy")
 	log.Debug("start init")
 
 	config := services.Config()
 	config.SetDefault(configBundleDirKey, "bundles")
 
-	var err error
+	data = services.Data()
+
 	relativeBundlePath := config.GetString(configBundleDirKey)
 	if err := os.MkdirAll(relativeBundlePath, 0700); err != nil {
 		log.Panicf("Failed bundle directory creation: %v", err)
@@ -36,15 +39,8 @@ func initPlugin(services apid.Services) error {
 	bundlePath = path.Join(storagePath, relativeBundlePath)
 	log.Infof("Bundle directory path is %s", bundlePath)
 
-	db, err = services.Data().DB()
-	if err != nil {
-		log.Panic("Unable to access DB", err)
-	}
-	initDB()
-
 	go distributeEvents()
 
-	initAPI(services)
 	initListener(services)
 
 	log.Debug("end init")

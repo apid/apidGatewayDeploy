@@ -30,11 +30,15 @@ var _ = BeforeSuite(func() {
 
 	config.Set("local_storage_path", tmpDir)
 
-	// init() will create the tables
 	apid.InitializePlugins()
 
+	db, err := data.DB()
+	Expect(err).NotTo(HaveOccurred())
+	initDB(db)
+	setDB(db)
+
 	router := apid.API().Router()
-	// fake unreliable bundle repo
+	// fake an unreliable bundle repo
 	downloadMultiplier = 10 * time.Millisecond
 	count := 0
 	router.HandleFunc("/bundle/{id}", func(w http.ResponseWriter, req *http.Request) {

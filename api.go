@@ -28,7 +28,7 @@ type errorResponse struct {
 	Reason    string `json:"reason"`
 }
 
-func initAPI(services apid.Services) {
+func initAPI() {
 	services.API().HandleFunc("/deployments/current", handleCurrentDeployment).Methods("GET")
 	services.API().HandleFunc("/deployments/{deploymentID}", handleDeploymentResult).Methods("POST")
 }

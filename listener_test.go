@@ -49,11 +49,13 @@ var _ = Describe("listener", func() {
 		row["id"] = &common.ColumnVal{Value: deploymentID}
 		row["manifest_body"] = &common.ColumnVal{Value: string(depBytes)}
 
-		var event = common.Snapshot{}
-		event.Tables = []common.Table{
-			{
-				Name: MANIFEST_TABLE,
-				Rows: []common.Row{row},
+		var event = common.Snapshot{
+			SnapshotInfo: "test",
+			Tables: []common.Table{
+				{
+					Name: MANIFEST_TABLE,
+					Rows: []common.Row{row},
+				},
 			},
 		}
 
@@ -76,7 +78,7 @@ var _ = Describe("listener", func() {
 
 		apid.Events().Listen(APIGEE_SYNC_EVENT, h)
 		apid.Events().Emit(APIGEE_SYNC_EVENT, &event)              // for standard listener
-		apid.Events().Emit(APIGEE_SYNC_EVENT, &common.Snapshot{}) // for test listener
+		apid.Events().Emit(APIGEE_SYNC_EVENT, &common.Snapshot{SnapshotInfo: "test"}) // for test listener
  	})
 
 	It("should process ApigeeSync change event", func(done Done) {

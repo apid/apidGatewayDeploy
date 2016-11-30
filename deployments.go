@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io/ioutil"
 	"time"
+	"github.com/30x/apid"
 )
 
 // todo: remove downloaded bundle files from old deployments
@@ -180,11 +181,11 @@ func getBundleFilePath(depID string, bundleURI string) string {
 
 // returns first bundle download error
 // all bundles will be attempted regardless of errors, in the future we could retry
-func prepareDeployment(depID string, dep deployment) error {
+func prepareDeployment(db apid.DB, depID string, dep deployment) error {
 
 	log.Debugf("preparing deployment: %s", depID)
 
-	err := insertDeployment(depID, dep)
+	err := insertDeployment(db, depID, dep)
 	if err != nil {
 		log.Errorf("insert deployment failed: %v", err)
 		return err

@@ -19,6 +19,7 @@ var _ = Describe("api", func() {
 
 		It("should get 404 if no deployments", func() {
 
+			db := getDB()
 			_, err := db.Exec("DELETE FROM gateway_deploy_deployment")
 			Expect(err).ShouldNot(HaveOccurred())
 
@@ -77,6 +78,7 @@ var _ = Describe("api", func() {
 
 		It("should get 404 after blocking if no deployment", func() {
 
+			db := getDB()
 			_, err := db.Exec("DELETE FROM gateway_deploy_deployment")
 			Expect(err).ShouldNot(HaveOccurred())
 
@@ -184,6 +186,7 @@ var _ = Describe("api", func() {
 
 		It("should mark a deployment as deployed", func() {
 
+			db := getDB()
 			deploymentID := "api_mark_deployed"
 			insertTestDeployment(testServer, deploymentID)
 
@@ -221,6 +224,7 @@ var _ = Describe("api", func() {
 
 		It("should mark a deployment as failed", func() {
 
+			db := getDB()
 			deploymentID := "api_test_3"
 			insertTestDeployment(testServer, deploymentID)
 
@@ -264,6 +268,7 @@ var _ = Describe("api", func() {
 
 func insertTestDeployment(server *httptest.Server, depID string) {
 
+	db := getDB()
 	uri, err := url.Parse(server.URL)
 	Expect(err).ShouldNot(HaveOccurred())
 	uri.Path = "/bundle"
@@ -284,7 +289,7 @@ func insertTestDeployment(server *httptest.Server, depID string) {
 		},
 	}
 
-	err = insertDeployment(depID, dep)
+	err = insertDeployment(db, depID, dep)
 	Expect(err).ShouldNot(HaveOccurred())
 
 	err = updateDeploymentStatus(db, depID, DEPLOYMENT_STATE_READY, 0)

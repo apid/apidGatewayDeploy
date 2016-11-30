@@ -3,6 +3,8 @@ package apiGatewayDeploy
 import (
 	"database/sql"
 	"time"
+	"github.com/30x/apid"
+	"sync"
 )
 
 const (
@@ -16,59 +18,57 @@ const (
 	BUNDLE_TYPE_DEP = 2
 )
 
+var (
+	unsafeDB apid.DB
+	dbMux    sync.RWMutex
+)
+
 type SQLExec interface {
 	Exec(query string, args ...interface{}) (sql.Result, error)
 }
 
-func initDB() {
+func initDB(db apid.DB) {
 
-	var count int
-	row := db.QueryRow("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='gateway_deploy_deployment';")
-	if err := row.Scan(&count); err != nil {
-		log.Panicf("Unable to check for tables: %v", err)
-	}
-	if count > 0 {
-		return
-	}
+	_, err := db.Exec(`
+	CREATE TABLE IF NOT EXISTS gateway_deploy_deployment (
+		id varchar(255), status integer, created_at integer,
+		modified_at integer, error_code varchar(255),
+		PRIMARY KEY (id));
 
-	log.Debug("Creating database tables...")
-
-	tx, err := db.Begin()
+	CREATE TABLE IF NOT EXISTS gateway_deploy_bundle (
+		deployment_id varchar(255), id varchar(255), scope varchar(255), uri varchar(255), type integer,
+		created_at integer, modified_at integer, status integer, error_code integer, error_reason text,
+		PRIMARY KEY (deployment_id, id),
+		FOREIGN KEY (deployment_id) references gateway_deploy_deployment(id) ON DELETE CASCADE);
+	`)
 	if err != nil {
-		log.Panicf("Unable to start transaction: %v", err)
-	}
-	defer tx.Rollback()
-
-	_, err = tx.Exec("CREATE TABLE gateway_deploy_deployment (" +
-		"id varchar(255), status integer, created_at integer, " +
-		"modified_at integer, error_code varchar(255), " +
-		"PRIMARY KEY (id));")
-	if err != nil {
-		log.Panicf("Unable to initialize gateway_deploy_deployment: %v", err)
+		log.Panicf("Unable to initialize database: %v", err)
 	}
 
-	_, err = tx.Exec("CREATE TABLE gateway_deploy_bundle (" +
-		"deployment_id varchar(255), id varchar(255), scope varchar(255), uri varchar(255), type integer, " +
-		"created_at integer, modified_at integer, status integer, error_code integer, error_reason text, " +
-		"PRIMARY KEY (deployment_id, id), " +
-		"FOREIGN KEY (deployment_id) references gateway_deploy_deployment(id) ON DELETE CASCADE);")
-	if err != nil {
-		log.Panicf("Unable to initialize gateway_deploy_bundle: %v", err)
-	}
-
-	err = tx.Commit()
-	if err != nil {
-		log.Panicf("Unable to commit transaction: %v", err)
-	} else {
-		log.Debug("Database tables created.")
-	}
+	log.Debug("Database tables created.")
 }
 
 func dbTimeNow() int64 {
 	return int64(time.Now().UnixNano())
 }
 
-func insertDeployment(depID string, dep deployment) error {
+func getDB() apid.DB {
+	dbMux.RLock()
+	db := unsafeDB
+	dbMux.RUnlock()
+	return db
+}
+
+func setDB(db apid.DB) {
+	dbMux.Lock()
+	if unsafeDB == nil { // init API when DB is initialized
+		go initAPI()
+	}
+	unsafeDB = db
+	dbMux.Unlock()
+}
+
+func insertDeployment(db apid.DB, depID string, dep deployment) error {
 
 	log.Debugf("insertDeployment: %s", depID)
 
@@ -126,6 +126,8 @@ func insertDeployment(depID string, dep deployment) error {
 func updateDeploymentAndBundles(depID string, rsp deploymentResponse) error {
 
 	log.Debugf("updateDeploymentAndBundles: %s", depID)
+
+	db := getDB()
 
 	/*
 	 * If the state of deployment was success, update state of bundles and
@@ -232,6 +234,7 @@ func updateBundleStatus(txn SQLExec, depID string, bundleID string, status int, 
 // getCurrentDeploymentID returns the ID of what should be the "current" deployment
 func getCurrentDeploymentID() (string, error) {
 
+	db := getDB()
 	var depID string
 	err := db.QueryRow("SELECT id FROM gateway_deploy_deployment " +
 		"WHERE status >= ? ORDER BY created_at DESC LIMIT 1;", DEPLOYMENT_STATE_READY).Scan(&depID)
@@ -242,6 +245,7 @@ func getCurrentDeploymentID() (string, error) {
 // getDeployment returns a fully populated deploymentResponse
 func getDeployment(depID string) (*deployment, error) {
 
+	db := getDB()
 	rows, err := db.Query("SELECT id, type, uri, COALESCE(scope, '') as scope " +
 		"FROM gateway_deploy_bundle WHERE deployment_id=?;", depID)
 	if err != nil {
