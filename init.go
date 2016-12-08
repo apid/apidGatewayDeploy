@@ -21,7 +21,7 @@ func init() {
 	apid.RegisterPlugin(initPlugin)
 }
 
-func initPlugin(s apid.Services) error {
+func initPlugin(s apid.Services) (apid.PluginData, error) {
 	services = s
 	log = services.Log().ForModule("apiGatewayDeploy")
 	log.Debug("start init")
@@ -45,5 +45,5 @@ func initPlugin(s apid.Services) error {
 
 	log.Debug("end init")
 
-	return nil
+	return pluginData, nil
 }
