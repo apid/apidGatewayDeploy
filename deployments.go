@@ -133,6 +133,12 @@ func prepareBundle(depID string, bun bundle) error {
 		_, err = io.Copy(tempFile, bundleReader)
 		if err != nil {
 			log.Errorf("Unable to write bundle %s: %v", tempFile, err)
+			return
+		}
+
+		err = tempFile.Close()
+		if err != nil {
+			log.Errorf("Unable to close file %s: %v", tempFile, err)
 		}
 
 		return
