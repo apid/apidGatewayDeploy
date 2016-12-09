@@ -68,8 +68,6 @@ func processChangeList(changes *common.ChangeList) {
 
 	db := getDB()
 	for _, change := range changes.Changes {
-		log.Debugf("change table: %s operation: %s", change.Table, change.Operation)
-
 		var err error
 		switch change.Table {
 		case MANIFEST_TABLE:

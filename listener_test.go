@@ -85,40 +85,7 @@ var _ = Describe("listener", func() {
 
 		deploymentID := "listener_test_2"
 
-		uri, err := url.Parse(testServer.URL)
-		Expect(err).ShouldNot(HaveOccurred())
-		uri.Path = "/bundle/1"
-		bundleUri := uri.String()
-
-		dep := deployment{
-			DeploymentID: deploymentID,
-			System: bundle{
-				URI: bundleUri,
-			},
-			Bundles: []bundle{
-				{
-					BundleID: "/bundle/1",
-					URI: bundleUri,
-					Scope: "some-scope",
-				},
-			},
-		}
-
-		depBytes, err := json.Marshal(dep)
-		Expect(err).ShouldNot(HaveOccurred())
-
-		row := common.Row{}
-		row["id"] = &common.ColumnVal{Value: deploymentID}
-		row["manifest_body"] = &common.ColumnVal{Value: string(depBytes)}
-
-		var event = common.ChangeList{}
-		event.Changes = []common.Change{
-			{
-				Operation: common.Insert,
-				Table: MANIFEST_TABLE,
-				NewRow: row,
-			},
-		}
+		var dep deployment
 
 		h := &test_handler{
 			deploymentID,
@@ -138,7 +105,9 @@ var _ = Describe("listener", func() {
 		}
 
 		apid.Events().Listen(APIGEE_SYNC_EVENT, h)
-		apid.Events().Emit(APIGEE_SYNC_EVENT, &event)               // for standard listener
+
+		dep = triggerDeploymentEvent(deploymentID)
+
 		apid.Events().Emit(APIGEE_SYNC_EVENT, &common.ChangeList{}) // for test listener
 	})
 })
@@ -174,4 +143,46 @@ func testDeployment(dep deployment) {
 		Expect(err).ShouldNot(HaveOccurred())
 		Expect(string(bytes)).Should(Equal(b.BundleID))
 	}
+}
+
+func triggerDeploymentEvent(deploymentID string) deployment {
+
+	uri, err := url.Parse(testServer.URL)
+	Expect(err).ShouldNot(HaveOccurred())
+	uri.Path = "/bundle/1"
+	bundleUri := uri.String()
+
+	dep := deployment{
+		DeploymentID: deploymentID,
+		System: bundle{
+			URI: bundleUri,
+		},
+		Bundles: []bundle{
+			{
+				BundleID: "/bundle/1",
+				URI: bundleUri,
+				Scope: "some-scope",
+			},
+		},
+	}
+
+	depBytes, err := json.Marshal(dep)
+	Expect(err).ShouldNot(HaveOccurred())
+
+	row := common.Row{}
+	row["id"] = &common.ColumnVal{Value: deploymentID}
+	row["manifest_body"] = &common.ColumnVal{Value: string(depBytes)}
+
+	var event = common.ChangeList{}
+	event.Changes = []common.Change{
+		{
+			Operation: common.Insert,
+			Table: MANIFEST_TABLE,
+			NewRow: row,
+		},
+	}
+
+	apid.Events().Emit(APIGEE_SYNC_EVENT, &event)
+
+	return dep
 }

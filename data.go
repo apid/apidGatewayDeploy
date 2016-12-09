@@ -118,8 +118,6 @@ func insertDeployment(db apid.DB, depID string, dep deployment) error {
 	}
 
 	log.Debugf("INSERT gateway_deploy_deployment %s succeeded", depID)
-
-	incoming <- depID
 	return err
 }
 
@@ -191,6 +189,11 @@ func updateDeploymentStatus(txn SQLExec, depID string, status int, errCode int) 
 	}
 
 	log.Debugf("UPDATE gateway_deploy_deployment %s succeeded", depID)
+
+	if status == DEPLOYMENT_STATE_READY {
+		incoming<- depID
+	}
+
 	return nil
 }
 

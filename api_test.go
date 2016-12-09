@@ -127,12 +127,20 @@ var _ = Describe("api", func() {
 
 				Expect(depRes.DeploymentID).Should(Equal(deploymentID))
 
+				for _, bundle := range depRes.Bundles {
+					uri, err := url.Parse(bundle.URI)
+					Expect(err).ShouldNot(HaveOccurred())
+					bContent, err := ioutil.ReadFile(uri.Path)
+					Expect(err).ShouldNot(HaveOccurred())
+					content := string(bContent)
+					Expect(content).Should(HavePrefix("/bundle/"))
+				}
+
 				close(done)
 			}()
 
-			time.Sleep(50 * time.Millisecond) // make sure API call is made and blocks
-			insertTestDeployment(testServer, deploymentID)
-			incoming <- deploymentID
+			time.Sleep(25 * time.Millisecond) // give api call above time to block
+			triggerDeploymentEvent(deploymentID)
 		})
 
 		It("should get 304 after blocking if no new deployment", func() {

@@ -99,7 +99,7 @@ func getBundleReader(uriString string) (io.ReadCloser, error) {
 		return nil, err
 	}
 	if res.StatusCode != 200 {
-		return nil, fmt.Errorf("Bundle uri %s failed with status %s", uriString, res.StatusCode)
+		return nil, fmt.Errorf("Bundle uri %s failed with status %d", uriString, res.StatusCode)
 	}
 	return res.Body, nil
 }
@@ -120,6 +120,7 @@ func prepareBundle(depID string, bun bundle) error {
 			log.Errorf("Unable to create temp file: %v", err)
 			return
 		}
+		defer tempFile.Close()
 		fileName = tempFile.Name()
 
 		var bundleReader io.ReadCloser
@@ -136,11 +137,7 @@ func prepareBundle(depID string, bun bundle) error {
 			return
 		}
 
-		err = tempFile.Close()
-		if err != nil {
-			log.Errorf("Unable to close file %s: %v", tempFile, err)
-		}
-
+		log.Debugf("Bundle downloaded: %s", bun.URI)
 		return
 	}
 
@@ -210,7 +207,7 @@ func prepareDeployment(db apid.DB, depID string, dep deployment) error {
 		bun := dep.Bundles[i]
 		go func() {
 			err := prepareBundle(depID, bun)
-			errorsChan <- err
+			errorsChan<- err
 			if err != nil {
 				id := string(i)
 				err = updateBundleStatus(db, depID, id, DEPLOYMENT_STATE_ERR_APID, ERROR_CODE_TODO, err.Error())

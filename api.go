@@ -68,7 +68,7 @@ func distributeEvents() {
 				}
 			}
 		case subscriber := <-addSubscriber:
-			log.Debugf("Add subscriber: %s", subscriber)
+			log.Debugf("Add subscriber: %v", subscriber)
 			subscribers[subscriber] = struct{}{}
 		}
 	}
