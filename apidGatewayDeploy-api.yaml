@@ -17,7 +17,7 @@ consumes:
 produces:
   - application/json
 paths:
-  /current:
+  /:
     get:
       description: Retrieve current deployment system and bundles to install.
       parameters:
@@ -28,7 +28,7 @@ paths:
         - name: block
           in: query
           type: integer
-          description: 'If block > 0 AND if there is no new bundle list available, then block for up to the specified number of seconds until a new bundle list becomes available. If no new deployment becomes available, then return 304 Not Modified if If-None-Match is specified, 404 otherwise.'
+          description: 'If block > 0 AND if there is no new bundle list available, then block for up to the specified number of seconds until a new bundle list becomes available. If no new deployment becomes available, then return 304 Not Modified if If-None-Match is specified.'
       responses:
         '200':
           headers:
@@ -37,50 +37,90 @@ paths:
               type: string
           description: The deployment system and bundles to install.
           examples:
-            application/json: {
-              "deploymentId": "abc123",
-              "system" : {
-                "bundleId": "system-bundle-rev-3",
-                "uri": "file:///apid/bundles/system-bundle-rev-3.zip"
-              },
-              "bundles": [
-                {
-                  "bundleId": "system-bundle-rev-3",
-                  "uri": "file:///apid/bundles/system-bundle-release-1-1233.zip",
-                  "scope": "@#$nike#$#$stage&#$(^#",
-                  "org": "nike",
-                  "env": "stage",
-                },{
-                  "bundleId": "bundleA-rev-9",
-                  "uri": "file:///apid/bundles/bundleA-rev-9-26372.zip",
-                  "scope": "@#$nike#$#$prod&#$(^#",
-                  "org": "nike",
-                  "env": "prod",
-                },{
-                  "bundleId": "bundleB-rev-1",
-                  "uri": "file:///somewhere/bundles/bundleB-rev-1-72351.zip",
-                  "scope": "@#$nike#$#$test&#$(^#",
-                  "org": "nike",
-                  "env": "test",
-                }
-              ]
-            }
+            application/json: [
+  {
+    "id":  "1234567890",
+    "displayName": "abc123",
+    "created":"1481917061",		
+    "updated":"1481917061",		
+    "createdBy":"mdobs",		
+    "updatedBy":"mdobs",
+    "scopeId": "ABCDEF",
+    "uri": "file:///tmp/F1ERRO/0c9853d1ad9b7ec9f7d16ed16ada1be4/archive/369a01f320f926cd8ffac5dfda83b1d8a2129ab3.zip",
+    "configurationJson": {
+      "PropA": "scope1bundle1propA",
+      "PropSCOPE_LEVEL": "aaa",
+      "PropCLUSTER_LEVEL": "xxx"
+    }
+  },
+  {
+    "id":  "1234567891",
+    "displayName": "abc123_2",
+    "created":"1481917061",		
+    "updated":"1481917061",		
+    "createdBy":"mdobs",		
+    "updatedBy":"mdobs",
+    "scopeId": "ABCDEF",
+    "uri": "file:///tmp/F1ERRO/0c9853d1ad9b7ec9f7d16ed16ada1be4/archive/369a01f320f926cd8ffac5dfda83b1d8a2129ab3.zip",
+    "configurationJson": {
+      "PropA": "scope1bundle2propA",
+      "PropSCOPE_LEVEL": "aaa",
+      "PropCLUSTER_LEVEL": "xxx"
+    }
+  },
+  {
+    "id":  "1234567892",
+    "displayName": "abc1234",
+    "created":"1481917061",		
+    "updated":"1481917061",		
+    "createdBy":"mdobs",		
+    "updatedBy":"mdobs",
+    "scopeId": "ABCDEF",
+    "uri": "file:///tmp/F1ERRO/0c9853d1ad9b7ec9f7d16ed16ada1be4/archive/369a01f320f926cd8ffac5dfda83b1d8a2129ab3.zip",
+    "configurationJson": {
+      "PropA": "scope1bundlepropA",
+      "PropSCOPE_LEVEL": "aaa",
+      "PropCLUSTER_LEVEL": "xxx"
+    }
+  },
+  {
+    "id":  "1234567893",
+    "displayName": "abc123",
+    "created":"1481917061",		
+    "updated":"1481917061",		
+    "createdBy":"mdobs",		
+    "updatedBy":"mdobs",
+    "scopeId": "EFGHIJK",
+    "uri": "file:///tmp/F1ERRO/0c9853d1ad9b7ec9f7d16ed16ada1be4/archive/369a01f320f926cd8ffac5dfda83b1d8a2129ab3.zip",
+    "configurationJson": {
+      "PropA": "scope2bundle1propA",
+      "PropSCOPE_LEVEL": "bbb",
+      "PropCLUSTER_LEVEL": "xxx"
+    }
+  },
+  {
+    "id":  "1234567894",
+    "displayName": "abc123_2",
+    "created":"1481917061",		
+    "updated":"1481917061",		
+    "createdBy":"fierrom",		
+    "updatedBy":"fierrom",
+    "scopeId": "EFGHIJK",
+    "uri": "file:///tmp/F1ERRO/0c9853d1ad9b7ec9f7d16ed16ada1be4/archive/369a01f320f926cd8ffac5dfda83b1d8a2129ab3.zip",
+    "configurationJson": {
+      "PropA": "scope2bundle2propA",
+      "PropSCOPE_LEVEL": "bbb",
+      "PropCLUSTER_LEVEL": "xxx"
+    }
+  }
+]
           schema:
             $ref: '#/definitions/DeploymentResponse'
         '304':
           description: Deployment not modified.
-        '404':
-          description: No current Deployment.
-
-  /{deploymentId}:
     post:
       description: Save results of deployment
       parameters:
-        - name: deploymentId
-          in: path
-          required: true
-          type: string
-          description: deployment ID
         - name: _
           in: body
           required: true
@@ -112,109 +152,80 @@ definitions:
     }
 
   DeploymentResponse:
+    type: array
+    items:
+      $ref: '#/definitions/DeploymentBundle'
+  
+  DeploymentBundle:
     type: object
     required:
-      - deploymentId
-      - system
-      - bundles
-    properties:
-      deploymentId:
-        type: string
-      system:
-        type: object
-        $ref: '#/definitions/SystemBundle'
-      bundles:
-        type: array
-        items:
-          $ref: '#/definitions/UserBundle'
-
-  SystemBundle:
-    type: object
-    required:
-      - bundleId
+      - id
+      - scopeId
+      - createdBy
+      - created
+      - updatedBy
+      - updated
+      - displayName
       - uri
+      - configurationJson
     properties:
-      bundleId:
+      id:
+        type: string
+      scopeId:
+        type: string
+      createdBy:
+        type: string
+      created: 
+        type: number
+      updatedBy:
+        type: string
+      updated:
+        type: number
+      displayName:
         type: string
       uri:
         type: string
-
-  UserBundle:
-    allOf:
-      - $ref: '#/definitions/SystemBundle'
-    required:
-      - scope
-    properties:
-      scope:
-        type: string
-        description: Used to convey request scope information to APID APIs
-      org:
-        type: string
-        description: Available for legacy purposes
-      env:
-        type: string
-        description: Available for legacy purposes
-
+      configurationJson:
+        type: object
+        
   DeploymentResult:
+    type: array
+    items:
+      $ref: '#/definitions/DeploymentBundleResult'
+    example: [
+      {
+        "id": "1234567890", 
+        "status": "SUCCESS"
+      },
+      {
+        "id":  "1234567890", 
+        "status": "SUCCESS"
+      },
+      {
+        "id":  "1234567890", 
+        "status": "SUCCESS"
+      }
+    ]
+    
+  DeploymentBundleResult:
     type: object
     required:
+      - id
       - status
     properties:
+      id:
+        type: string
+      message:
+        type: string
+      errorCode:
+        type: number
       status:
         type: string
         enum:
           - "SUCCESS"
           - "FAIL"
-      error:
-        $ref: '#/definitions/DeploymentResultError'
     description: Status of SUCCESS or FAIL plus error
     example: {
+      "id": 1234567890, 
       "status": "SUCCESS"
     }
-
-  DeploymentResultError:
-    type: object
-    required:
-      - errorCode
-      - reason
-    properties:
-      errorCode:
-        type: number
-      reason:
-        type: string
-      bundleErrors:
-        type: array
-        items:
-          $ref: '#/definitions/DeploymentBundleError'
-    example: {
-      "error": {
-        "errorCode": 5,
-        "reason": "Failed restart",
-        "bundleErrors": [
-          {
-              "bundleId": "system-bundle-rev-3",
-              "errorCode": 5,
-              "reason": "Invalid template parameter"
-          },
-          {
-              "bundleId": "system-bundle-rev-9",
-              "errorCode": 1,
-              "reason": "Missing Virtual Host"
-          }
-        ]
-      }
-    }
-
-  DeploymentBundleError:
-    type: object
-    required:
-      - bundleId
-      - errorCode
-      - reason
-    properties:
-      bundleId:
-        type: string
-      errorCode:
-        type: number
-      reason:
-        type: string
