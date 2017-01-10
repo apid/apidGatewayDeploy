@@ -183,7 +183,7 @@ func getReadyDeployments() (deployments []dataDeployment, err error) {
 		created_by, updated, updated_by, bundle_name,
 		bundle_uri, local_bundle_uri
 	FROM deployments
-	WHERE local_bundle_uri != "" AND deploy_error_code == 0
+	WHERE local_bundle_uri != ""
 	`)
 	if err != nil {
 		if err == sql.ErrNoRows{
