@@ -36,7 +36,8 @@ var _ = BeforeSuite(func() {
 
 	db, err := data.DB()
 	Expect(err).NotTo(HaveOccurred())
-	initDB(db)
+	err = initDB(db)
+	Expect(err).NotTo(HaveOccurred())
 	setDB(db)
 
 	router := apid.API().Router()

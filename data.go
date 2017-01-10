@@ -35,7 +35,7 @@ type SQLExec interface {
 	Exec(query string, args ...interface{}) (sql.Result, error)
 }
 
-func initDB(db apid.DB) {
+func initDB(db apid.DB) error {
 	_, err := db.Exec(`
 	CREATE TABLE IF NOT EXISTS etag (
 		value integer
@@ -63,10 +63,11 @@ func initDB(db apid.DB) {
 	);
 	`)
 	if err != nil {
-		log.Panicf("Unable to initialize database: %v", err)
+		return err
 	}
 
 	log.Debug("Database tables created.")
+	return nil
 }
 
 func getDB() apid.DB {

@@ -50,9 +50,16 @@ func processSnapshot(snapshot *common.Snapshot) {
 		log.Panicf("Unable to access database: %v", err)
 	}
 
-	initDB(db)
+	err = initDB(db)
+	if err != nil {
+		log.Panicf("Unable to initialize database: %v", err)
+	}
 
 	tx, err := db.Begin()
+	if err != nil {
+		log.Panicf("Error starting transaction: %v", err)
+	}
+
 	defer tx.Rollback()
 	for _, table := range snapshot.Tables {
 		var err error
