@@ -1,17 +1,26 @@
 package apiGatewayDeploy
 
 import (
+	"database/sql"
+	"encoding/json"
 	"github.com/30x/apid"
 	"github.com/apigee-labs/transicator/common"
 )
 
 const (
 	APIGEE_SYNC_EVENT = "ApigeeSync"
-	MANIFEST_TABLE = "edgex.apid_config_manifest_deployment"
+	DEPLOYMENT_TABLE  = "edgex.deployment"
 )
 
 func initListener(services apid.Services) {
 	services.Events().Listen(APIGEE_SYNC_EVENT, &apigeeSyncHandler{})
+}
+
+type bundleConfigJson struct {
+	Name         string `json:"name"`
+	URI          string `json:"uri"`
+	ChecksumType string `json:"checksumType"`
+	Checksum     string `json:"checksum"`
 }
 
 type apigeeSyncHandler struct {
@@ -43,21 +52,28 @@ func processSnapshot(snapshot *common.Snapshot) {
 
 	initDB(db)
 
+	tx, err := db.Begin()
+	defer tx.Rollback()
 	for _, table := range snapshot.Tables {
 		var err error
 		switch table.Name {
-		case MANIFEST_TABLE:
+		case DEPLOYMENT_TABLE:
 			log.Debugf("Snapshot of %s with %d rows", table.Name, len(table.Rows))
 			if len(table.Rows) == 0 {
 				return
 			}
-			// todo: should be 0 or 1 *per system*!! - TBD
-			row := table.Rows[len(table.Rows)-1]
-			err = processNewManifest(db, row)
+			for _, row := range table.Rows {
+				addDeployment(tx, row)
+			}
 		}
 		if err != nil {
 			log.Panicf("Error processing Snapshot: %v", err)
 		}
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		log.Panicf("Error committing Snapshot change: %v", err)
 	}
 
 	setDB(db)
@@ -66,47 +82,170 @@ func processSnapshot(snapshot *common.Snapshot) {
 
 func processChangeList(changes *common.ChangeList) {
 
-	db := getDB()
+	tx, err := getDB().Begin()
+	if err != nil {
+		log.Panicf("Error processing ChangeList: %v", err)
+	}
+	defer tx.Rollback()
 	for _, change := range changes.Changes {
 		var err error
 		switch change.Table {
-		case MANIFEST_TABLE:
+		case DEPLOYMENT_TABLE:
 			switch change.Operation {
 			case common.Insert:
-				err = processNewManifest(db, change.NewRow)
+				err = addDeployment(tx, change.NewRow)
+			case common.Delete:
+				var id string
+				err = change.OldRow.Get("id", &id)
+				if err == nil {
+					err = deleteDeployment(tx, id)
+				}
 			default:
-				log.Error("unexpected operation: %s", change.Operation)
+				log.Errorf("unexpected operation: %s", change.Operation)
 			}
 		}
 		if err != nil {
 			log.Panicf("Error processing ChangeList: %v", err)
 		}
 	}
+	err = tx.Commit()
+	if err != nil {
+		log.Panicf("Error processing ChangeList: %v", err)
+	}
 }
 
-func processNewManifest(db apid.DB, row common.Row) error {
+func addDeployment(tx *sql.Tx, row common.Row) (err error) {
 
-	var deploymentID, manifestString string
-	err := row.Get("id", &deploymentID)
+	d := dataDeployment{}
+	err = row.Get("id", &d.ID)
 	if err != nil {
-		return err
+		return
 	}
-	err = row.Get("manifest_body", &manifestString)
+	err = row.Get("bundle_config_id", &d.BundleConfigID)
 	if err != nil {
-		return err
+		return
+	}
+	err = row.Get("apid_cluster_id", &d.ApidClusterID)
+	if err != nil {
+		return
+	}
+	err = row.Get("data_scope_id", &d.DataScopeID)
+	if err != nil {
+		return
+	}
+	err = row.Get("bundle_config_json", &d.BundleConfigJSON)
+	if err != nil {
+		return
+	}
+	err = row.Get("config_json", &d.ConfigJSON)
+	if err != nil {
+		return
+	}
+	err = row.Get("status", &d.Status)
+	if err != nil {
+		return
+	}
+	err = row.Get("created", &d.Created)
+	if err != nil {
+		return
+	}
+	err = row.Get("created_by", &d.CreatedBy)
+	if err != nil {
+		return
+	}
+	err = row.Get("updated", &d.Updated)
+	if err != nil {
+		return
+	}
+	err = row.Get("updated_by", &d.UpdatedBy)
+	if err != nil {
+		return
 	}
 
-	manifest, err := parseManifest(manifestString)
+	var bc bundleConfigJson
+	err = json.Unmarshal([]byte(d.BundleConfigJSON), &bc)
 	if err != nil {
-		log.Errorf("error parsing manifest: %v", err)
-		return err
+		log.Errorf("JSON decoding Manifest failed: %v", err)
+		return
 	}
 
-	err = prepareDeployment(db, deploymentID, manifest)
+	d.BundleName = bc.Name
+	d.BundleURI = bc.URI
+	d.BundleChecksumType = bc.ChecksumType
+	d.BundleChecksum = bc.Checksum
+
+	err = insertDeployment(tx, d)
 	if err != nil {
-		log.Errorf("serviceDeploymentQueue prepare deployment failed: %s", deploymentID)
-		return err
+		return
 	}
 
-	return nil
+	// todo: limit # concurrent downloads?
+	go downloadBundle(d)
+	return
 }
+
+/*
+Cleanup:
+  find bundles that are not used by any deployments, delete them
+
+On deployment delete:
+  delete deployment from DB
+  send deployments to client
+
+On deployment insert:
+  parse bundle_config_json
+    add display_name, bundle_uri to deployment
+  insert deployment into DB
+  if local bundle
+    send deployments to client
+  else
+    initiate bundle download
+
+On bundle downloaded:
+  send deployments to client
+
+Send deployments to client:
+  select * from deployments
+  for each where bundle exists, collect translation (see below)
+  send collection to client
+*/
+
+/*
+KMS:
+deployment (
+    id character varying(36) NOT NULL,
+    bundle_config_id character varying(36) NOT NULL,
+    apid_cluster_id character varying(36) NOT NULL,
+    data_scope_id character varying(36) NOT NULL,
+    bundle_config_json text NOT NULL,
+    config_json text NOT NULL,
+    status text NOT NULL,
+    created timestamp without time zone,
+    created_by text,
+    updated timestamp without time zone,
+    updated_by text
+);
+
+bundle_config_json:
+	id:
+	scopeId:
+	name:
+	uri:
+	crc:  -> checksum, checksumType
+	created:
+	createdBy:
+	updated:
+	updatedBy:
+
+API Mapping:
+  Objects in deployments array:
+	id		  deployment.deploymentId
+	scopeId		  deployment.data_scope_id
+	created		  deployment.created
+	createdBy	  deployment.created_by
+	updated		  deployment.updated
+	updatedBy	  deployment.updated_by
+	configurationJson deployment.configurationJson
+	displayName	  bundle_config_json.name
+	uri		  downloaded file uri per bundle_config_json.uri
+*/

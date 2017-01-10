@@ -7,182 +7,169 @@ import (
 	. "github.com/onsi/gomega"
 	"net/url"
 	"github.com/apigee-labs/transicator/common"
-	"io/ioutil"
 )
 
 var _ = Describe("listener", func() {
 
-	It("should process ApigeeSync snapshot event", func(done Done) {
-
-		deploymentID := "listener_test_1"
-
-		uri, err := url.Parse(testServer.URL)
+	BeforeEach(func() {
+		_, err := getDB().Exec("DELETE FROM deployments")
 		Expect(err).ShouldNot(HaveOccurred())
-		uri.Path = "/bundle/1"
-		bundleUri1 := uri.String()
-		uri.Path = "/bundle/2"
-		bundleUri2 := uri.String()
+	})
 
-		dep := deployment{
-			DeploymentID: deploymentID,
-			System: bundle{
-				URI: "whatever",
-			},
-			Bundles: []bundle{
-				{
-					BundleID: "/bundle/1",
-					URI: bundleUri1,
-					Scope: "some-scope",
+	Context("ApigeeSync snapshot event", func() {
+
+		It("should set DB and process", func(done Done) {
+
+			deploymentID := "listener_test_1"
+
+			uri, err := url.Parse(testServer.URL)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			uri.Path = "/bundles/1"
+			bundleUri := uri.String()
+			bundle1 := bundleConfigJson{
+				Name: uri.Path,
+				URI: bundleUri,
+				ChecksumType: "crc-32",
+			}
+			bundle1.Checksum = testGetChecksum(bundle1.ChecksumType, bundleUri)
+			bundle1Json, err := json.Marshal(bundle1)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			row := common.Row{}
+			row["id"] = &common.ColumnVal{Value: deploymentID}
+			row["bundle_config_json"] = &common.ColumnVal{Value: string(bundle1Json)}
+
+			var event = common.Snapshot{
+				SnapshotInfo: "test",
+				Tables: []common.Table{
+					{
+						Name: DEPLOYMENT_TABLE,
+						Rows: []common.Row{row},
+					},
 				},
-				{
-					BundleID: "/bundle/2",
-					URI: bundleUri2,
-					Scope: "some-scope",
+			}
+
+			var listener = make(chan string)
+			addSubscriber <- listener
+
+			apid.Events().Emit(APIGEE_SYNC_EVENT, &event)
+
+			id := <-listener
+			Expect(id).To(Equal(deploymentID))
+
+			deployments, err := getReadyDeployments()
+			Expect(err).ShouldNot(HaveOccurred())
+
+			Expect(len(deployments)).To(Equal(1))
+			d := deployments[0]
+
+			Expect(d.ID).To(Equal(deploymentID))
+			Expect(d.BundleName).To(Equal(bundle1.Name))
+			Expect(d.BundleURI).To(Equal(bundle1.URI))
+
+			close(done)
+		})
+	})
+
+	Context("ApigeeSync change event", func() {
+
+		It("add event should add a deployment", func(done Done) {
+
+			deploymentID := "add_test_1"
+
+			uri, err := url.Parse(testServer.URL)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			uri.Path = "/bundles/1"
+			bundleUri := uri.String()
+			bundle := bundleConfigJson{
+				Name: uri.Path,
+				URI: bundleUri,
+				ChecksumType: "crc-32",
+			}
+			bundle.Checksum = testGetChecksum(bundle.ChecksumType, bundleUri)
+			bundle1Json, err := json.Marshal(bundle)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			row := common.Row{}
+			row["id"] = &common.ColumnVal{Value: deploymentID}
+			row["bundle_config_json"] = &common.ColumnVal{Value: string(bundle1Json)}
+
+			var event = common.ChangeList{
+				Changes: []common.Change{
+					{
+						Operation: common.Insert,
+						Table: DEPLOYMENT_TABLE,
+						NewRow: row,
+					},
 				},
-			},
-		}
+			}
 
-		depBytes, err := json.Marshal(dep)
-		Expect(err).ShouldNot(HaveOccurred())
+			var listener = make(chan string)
+			addSubscriber <- listener
 
-		row := common.Row{}
-		row["id"] = &common.ColumnVal{Value: deploymentID}
-		row["manifest_body"] = &common.ColumnVal{Value: string(depBytes)}
+			apid.Events().Emit(APIGEE_SYNC_EVENT, &event)
 
-		var event = common.Snapshot{
-			SnapshotInfo: "test",
-			Tables: []common.Table{
-				{
-					Name: MANIFEST_TABLE,
-					Rows: []common.Row{row},
+			// wait for event to propagate
+			id := <-listener
+			Expect(id).To(Equal(deploymentID))
+
+			deployments, err := getReadyDeployments()
+			Expect(err).ShouldNot(HaveOccurred())
+
+			Expect(len(deployments)).To(Equal(1))
+			d := deployments[0]
+
+			Expect(d.ID).To(Equal(deploymentID))
+			Expect(d.BundleName).To(Equal(bundle.Name))
+			Expect(d.BundleURI).To(Equal(bundle.URI))
+
+			close(done)
+		})
+
+		It("delete event should delete a deployment", func(done Done) {
+
+			deploymentID := "delete_test_1"
+
+			tx, err := getDB().Begin()
+			Expect(err).ShouldNot(HaveOccurred())
+			dep := dataDeployment{
+				ID: deploymentID,
+				LocalBundleURI: "whatever",
+			}
+			err = insertDeployment(tx, dep)
+			Expect(err).ShouldNot(HaveOccurred())
+			err = tx.Commit()
+			Expect(err).ShouldNot(HaveOccurred())
+
+			row := common.Row{}
+			row["id"] = &common.ColumnVal{Value: deploymentID}
+
+			var event = common.ChangeList{
+				Changes: []common.Change{
+					{
+						Operation: common.Delete,
+						Table: DEPLOYMENT_TABLE,
+						OldRow: row,
+					},
 				},
-			},
-		}
+			}
 
-		h := &test_handler{
-			deploymentID,
-			func(e apid.Event) {
-				defer GinkgoRecover()
+			var listener = make(chan string)
+			addSubscriber <- listener
 
-				// ignore the first event, let standard listener process it
-				changeSet, ok := e.(*common.Snapshot)
-				if !ok || len(changeSet.Tables) > 0 {
-					return
-				}
+			apid.Events().Emit(APIGEE_SYNC_EVENT, &event)
 
-				testDeployment(dep)
+			id := <-listener
+			Expect(id).To(Equal(deploymentID))
 
-				close(done)
-			},
-		}
+			deployments, err := getReadyDeployments()
+			Expect(err).ShouldNot(HaveOccurred())
 
-		apid.Events().Listen(APIGEE_SYNC_EVENT, h)
-		apid.Events().Emit(APIGEE_SYNC_EVENT, &event)              // for standard listener
-		apid.Events().Emit(APIGEE_SYNC_EVENT, &common.Snapshot{SnapshotInfo: "test"}) // for test listener
- 	})
+			Expect(len(deployments)).To(Equal(0))
 
-	It("should process ApigeeSync change event", func(done Done) {
-
-		deploymentID := "listener_test_2"
-
-		var dep deployment
-
-		h := &test_handler{
-			deploymentID,
-			func(e apid.Event) {
-				defer GinkgoRecover()
-
-				// ignore the first event, let standard listener process it
-				changeSet, ok := e.(*common.ChangeList)
-				if !ok || len(changeSet.Changes) > 0 {
-					return
-				}
-
-				testDeployment(dep)
-
-				close(done)
-			},
-		}
-
-		apid.Events().Listen(APIGEE_SYNC_EVENT, h)
-
-		dep = triggerDeploymentEvent(deploymentID)
-
-		apid.Events().Emit(APIGEE_SYNC_EVENT, &common.ChangeList{}) // for test listener
+			close(done)
+		})
 	})
 })
-
-type test_handler struct {
-	description string
-	f           func(event apid.Event)
-}
-
-func (t *test_handler) String() string {
-	return t.description
-}
-
-func (t *test_handler) Handle(event apid.Event) {
-	t.f(event)
-}
-
-func testDeployment(dep deployment) {
-
-	depID, err := getCurrentDeploymentID()
-	Expect(err).ShouldNot(HaveOccurred())
-	Expect(depID).Should(Equal(dep.DeploymentID))
-
-	deployment, err := getDeployment(depID)
-	Expect(deployment.Bundles).To(HaveLen(len(dep.Bundles)))
-
-	for _, b := range dep.Bundles {
-		bundleFile := getBundleFilePath(depID, b.URI)
-		Expect(err).ShouldNot(HaveOccurred())
-		Expect(bundleFile).To(BeARegularFile())
-
-		bytes, err := ioutil.ReadFile(bundleFile)
-		Expect(err).ShouldNot(HaveOccurred())
-		Expect(string(bytes)).Should(Equal(b.BundleID))
-	}
-}
-
-func triggerDeploymentEvent(deploymentID string) deployment {
-
-	uri, err := url.Parse(testServer.URL)
-	Expect(err).ShouldNot(HaveOccurred())
-	uri.Path = "/bundle/1"
-	bundleUri := uri.String()
-
-	dep := deployment{
-		DeploymentID: deploymentID,
-		System: bundle{
-			URI: bundleUri,
-		},
-		Bundles: []bundle{
-			{
-				BundleID: "/bundle/1",
-				URI: bundleUri,
-				Scope: "some-scope",
-			},
-		},
-	}
-
-	depBytes, err := json.Marshal(dep)
-	Expect(err).ShouldNot(HaveOccurred())
-
-	row := common.Row{}
-	row["id"] = &common.ColumnVal{Value: deploymentID}
-	row["manifest_body"] = &common.ColumnVal{Value: string(depBytes)}
-
-	var event = common.ChangeList{}
-	event.Changes = []common.Change{
-		{
-			Operation: common.Insert,
-			Table: MANIFEST_TABLE,
-			NewRow: row,
-		},
-	}
-
-	apid.Events().Emit(APIGEE_SYNC_EVENT, &event)
-
-	return dep
-}

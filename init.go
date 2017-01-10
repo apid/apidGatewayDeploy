@@ -32,11 +32,11 @@ func initPlugin(s apid.Services) (apid.PluginData, error) {
 	data = services.Data()
 
 	relativeBundlePath := config.GetString(configBundleDirKey)
-	if err := os.MkdirAll(relativeBundlePath, 0700); err != nil {
-		log.Panicf("Failed bundle directory creation: %v", err)
-	}
 	storagePath := config.GetString("local_storage_path")
 	bundlePath = path.Join(storagePath, relativeBundlePath)
+	if err := os.MkdirAll(bundlePath, 0700); err != nil {
+		log.Panicf("Failed bundle directory creation: %v", err)
+	}
 	log.Infof("Bundle directory path is %s", bundlePath)
 
 	go distributeEvents()
