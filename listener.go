@@ -99,6 +99,7 @@ func processChangeList(changes *common.ChangeList) {
 				err = change.OldRow.Get("id", &id)
 				if err == nil {
 					err = deleteDeployment(tx, id)
+					// todo: delete downloaded bundle file
 				}
 			default:
 				log.Errorf("unexpected operation: %s", change.Operation)
@@ -183,69 +184,3 @@ func addDeployment(tx *sql.Tx, row common.Row) (err error) {
 	go downloadBundle(d)
 	return
 }
-
-/*
-Cleanup:
-  find bundles that are not used by any deployments, delete them
-
-On deployment delete:
-  delete deployment from DB
-  send deployments to client
-
-On deployment insert:
-  parse bundle_config_json
-    add display_name, bundle_uri to deployment
-  insert deployment into DB
-  if local bundle
-    send deployments to client
-  else
-    initiate bundle download
-
-On bundle downloaded:
-  send deployments to client
-
-Send deployments to client:
-  select * from deployments
-  for each where bundle exists, collect translation (see below)
-  send collection to client
-*/
-
-/*
-KMS:
-deployment (
-    id character varying(36) NOT NULL,
-    bundle_config_id character varying(36) NOT NULL,
-    apid_cluster_id character varying(36) NOT NULL,
-    data_scope_id character varying(36) NOT NULL,
-    bundle_config_json text NOT NULL,
-    config_json text NOT NULL,
-    status text NOT NULL,
-    created timestamp without time zone,
-    created_by text,
-    updated timestamp without time zone,
-    updated_by text
-);
-
-bundle_config_json:
-	id:
-	scopeId:
-	name:
-	uri:
-	crc:  -> checksum, checksumType
-	created:
-	createdBy:
-	updated:
-	updatedBy:
-
-API Mapping:
-  Objects in deployments array:
-	id		  deployment.deploymentId
-	scopeId		  deployment.data_scope_id
-	created		  deployment.created
-	createdBy	  deployment.created_by
-	updated		  deployment.updated
-	updatedBy	  deployment.updated_by
-	configurationJson deployment.configurationJson
-	displayName	  bundle_config_json.name
-	uri		  downloaded file uri per bundle_config_json.uri
-*/
