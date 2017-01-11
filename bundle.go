@@ -25,7 +25,7 @@ var (
 	backOffMultiplier = 10 * time.Second
 )
 
-func downloadBundle(dep dataDeployment) error {
+func downloadBundle(dep DataDeployment) error {
 
 	log.Debugf("starting bundle download process: %s", dep.BundleURI)
 
@@ -77,7 +77,7 @@ func downloadBundle(dep dataDeployment) error {
 	return nil
 }
 
-func getBundleFile(dep dataDeployment) string {
+func getBundleFile(dep DataDeployment) string {
 
 	// the content of the URI is unfortunately not guaranteed not to change, so I can't just use dep.BundleURI
 	// unfortunately, this also means that a bundle cache isn't especially relevant

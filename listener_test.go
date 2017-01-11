@@ -134,11 +134,11 @@ var _ = Describe("listener", func() {
 
 			tx, err := getDB().Begin()
 			Expect(err).ShouldNot(HaveOccurred())
-			dep := dataDeployment{
+			dep := DataDeployment{
 				ID: deploymentID,
 				LocalBundleURI: "whatever",
 			}
-			err = insertDeployment(tx, dep)
+			err = InsertDeployment(tx, dep)
 			Expect(err).ShouldNot(HaveOccurred())
 			err = tx.Commit()
 			Expect(err).ShouldNot(HaveOccurred())

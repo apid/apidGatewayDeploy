@@ -6,54 +6,60 @@ import (
 	"github.com/30x/apid/factory"
 	_ "github.com/30x/apidGatewayDeploy"
 	"io/ioutil"
-	"github.com/apigee-labs/transicator/common"
 	"github.com/30x/apidGatewayDeploy"
 	"os"
 )
 
 func main() {
-	manifestFlag := flag.String("manifest", "", "file path to a manifest yaml file")
+	bundleFlag := flag.String("bundle", "", "file path to a bundle file (for testing)")
+	configFlag := flag.String("config", "", "file path to a bundle config file (for testing)")
 	flag.Parse()
-	manifestFile := *manifestFlag
+	bundleFile := *bundleFlag
+	configFile := *configFlag
 
-	// initialize apid using default services
 	apid.Initialize(factory.DefaultServicesFactory())
 
 	log := apid.Log()
 	log.Debug("initializing...")
 
-	config := apid.Config()
+	configService := apid.Config()
 
-	// if manifest is specified, start with only the manifest using a temp dir
-	var manifest []byte
-	if manifestFile != "" {
-		var err error
-		manifest, err = ioutil.ReadFile(manifestFile)
-		if err != nil {
-			log.Errorf("ERROR: Unable to read manifest at %s", manifestFile)
-			return
-		}
-
-		log.Printf("Running in temp dir with manifest: %s", manifestFile)
+	// if bundle is specified, start in a temp dir for testing
+	var bundleConfig string
+	if bundleFile != "" {
+		log.Printf("Running in temp dir with bundle file: %s", bundleFile)
 		tmpDir, err := ioutil.TempDir("", "apidGatewayDeploy")
 		if err != nil {
 			log.Panicf("ERROR: Unable to create temp dir", err)
 		}
 		defer os.RemoveAll(tmpDir)
-		config.Set("data_path", tmpDir)
-		config.Set("gatewaydeploy_bundle_dir", tmpDir)
+
+		configService.Set("data_path", tmpDir)
+		configService.Set("gatewaydeploy_bundle_dir", tmpDir)
+
+		if configFile != "" {
+			bundleConfigBytes, err := ioutil.ReadFile(configFile)
+			if err != nil {
+				log.Errorf("ERROR: Unable to read bundle config file at %s", configFile)
+				return
+
+			}
+			bundleConfig = string(bundleConfigBytes)
+		}
 	}
 
-	// this will call all initialization functions on all registered plugins
 	apid.InitializePlugins()
 
-	if manifest != nil {
-		insertTestRecord(manifest)
+	if bundleFile != "" {
+		err := insertTestDeployment(bundleFile, bundleConfig)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	// print the base url to the console
 	basePath := "/deployments"
-	port := config.GetString("api_port")
+	port := configService.GetString("api_port")
 	log.Print()
 	log.Printf("API is at: http://localhost:%s%s", port, basePath)
 	log.Print()
@@ -64,19 +70,51 @@ func main() {
 	log.Fatalf("Error. Is something already running on port %d? %s", port, err)
 }
 
-func insertTestRecord(manifest []byte) {
+func insertTestDeployment(bundleFile, bundleConfig string) error {
 
-	row := common.Row{}
-	row["id"] = &common.ColumnVal{Value: "deploymentID"}
-	row["manifest_body"] = &common.ColumnVal{Value: string(manifest)}
+	deploymentID := "testDeployment"
 
-	var event = common.Snapshot{}
-	event.Tables = []common.Table{
-		{
-			Name: apiGatewayDeploy.MANIFEST_TABLE,
-			Rows: []common.Row{row},
-		},
+	dep := apiGatewayDeploy.DataDeployment{
+		ID: deploymentID,
+		BundleConfigID: deploymentID,
+		ApidClusterID: deploymentID,
+		DataScopeID: deploymentID,
+		BundleConfigJSON: bundleConfig,
+		ConfigJSON: "",
+		Status: "",
+		Created: "",
+		CreatedBy: "",
+		Updated: "",
+		UpdatedBy: "",
+		BundleName: deploymentID,
+		BundleURI: bundleFile,
+		BundleChecksum: "",
+		BundleChecksumType: "",
+		LocalBundleURI: bundleFile,
 	}
 
-	apid.Events().Emit(apiGatewayDeploy.APIGEE_SYNC_EVENT, &event)
+	log := apid.Log()
+
+	db, err := apid.Data().DB()
+	if err != nil {
+		return err
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+
+	err = apiGatewayDeploy.InsertDeployment(tx, dep)
+	if err != nil {
+		log.Error("Unable to insert deployment")
+		return err
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

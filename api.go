@@ -182,7 +182,7 @@ func apiGetCurrentDeployments(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func sendDeployments(w http.ResponseWriter, dataDeps []dataDeployment, eTag string) {
+func sendDeployments(w http.ResponseWriter, dataDeps []DataDeployment, eTag string) {
 
 	var apiDeps apiDeploymentResponse
 

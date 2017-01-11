@@ -124,7 +124,7 @@ func processChangeList(changes *common.ChangeList) {
 
 func addDeployment(tx *sql.Tx, row common.Row) (err error) {
 
-	d := dataDeployment{}
+	d := DataDeployment{}
 	err = row.Get("id", &d.ID)
 	if err != nil {
 		return
@@ -182,7 +182,7 @@ func addDeployment(tx *sql.Tx, row common.Row) (err error) {
 	d.BundleChecksumType = bc.ChecksumType
 	d.BundleChecksum = bc.Checksum
 
-	err = insertDeployment(tx, d)
+	err = InsertDeployment(tx, d)
 	if err != nil {
 		return
 	}

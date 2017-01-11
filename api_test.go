@@ -309,7 +309,7 @@ func insertTestDeployment(testServer *httptest.Server, deploymentID string) {
 	tx, err := getDB().Begin()
 	Expect(err).ShouldNot(HaveOccurred())
 
-	dep := dataDeployment{
+	dep := DataDeployment{
 		ID: deploymentID,
 		BundleConfigID: deploymentID,
 		ApidClusterID: deploymentID,
@@ -328,7 +328,7 @@ func insertTestDeployment(testServer *httptest.Server, deploymentID string) {
 		LocalBundleURI: "x",
 	}
 
-	err = insertDeployment(tx, dep)
+	err = InsertDeployment(tx, dep)
 	Expect(err).ShouldNot(HaveOccurred())
 
 	err = tx.Commit()

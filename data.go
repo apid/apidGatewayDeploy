@@ -12,7 +12,7 @@ var (
 	dbMux    sync.RWMutex
 )
 
-type dataDeployment struct {
+type DataDeployment struct {
 	ID                string
 	BundleConfigID    string
 	ApidClusterID     string
@@ -119,7 +119,7 @@ func getETag() (string, error) {
 	return eTag, err
 }
 
-func insertDeployment(tx *sql.Tx, dep dataDeployment) error {
+func InsertDeployment(tx *sql.Tx, dep DataDeployment) error {
 
 	log.Debugf("insertDeployment: %s", dep.ID)
 
@@ -175,7 +175,7 @@ func deleteDeployment(tx *sql.Tx, depID string) error {
 }
 
 // getReadyDeployments() returns array of deployments that are ready to deploy
-func getReadyDeployments() (deployments []dataDeployment, err error) {
+func getReadyDeployments() (deployments []DataDeployment, err error) {
 
 	db := getDB()
 	rows, err := db.Query(`
@@ -196,7 +196,7 @@ func getReadyDeployments() (deployments []dataDeployment, err error) {
 	defer rows.Close()
 
 	for rows.Next() {
-		dep := dataDeployment{}
+		dep := DataDeployment{}
 		rows.Scan(&dep.ID, &dep.BundleConfigID, &dep.ApidClusterID, &dep.DataScopeID,
 			&dep.BundleConfigJSON, &dep.ConfigJSON, &dep.Status, &dep.Created,
 			&dep.CreatedBy, &dep.Updated, &dep.UpdatedBy, &dep.BundleName,
@@ -208,40 +208,6 @@ func getReadyDeployments() (deployments []dataDeployment, err error) {
 	return
 }
 
-// for testing
-func getAllDeploymentRecords() (deployments []dataDeployment, err error) {
-
-	db := getDB()
-	rows, err := db.Query(`
-	SELECT id, bundle_config_id, apid_cluster_id, data_scope_id,
-		bundle_config_json, config_json, status, created,
-		created_by, updated, updated_by, bundle_name,
-		bundle_uri, local_bundle_uri
-	FROM deployments
-	`)
-	if err != nil {
-		if err == sql.ErrNoRows{
-			return deployments, nil
-		}
-		log.Errorf("Error querying deployments: %v", err)
-		return
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		dep := dataDeployment{}
-		rows.Scan(&dep.ID, &dep.BundleConfigID, &dep.ApidClusterID, &dep.DataScopeID,
-			&dep.BundleConfigJSON, &dep.ConfigJSON, &dep.Status, &dep.Created,
-			&dep.CreatedBy, &dep.Updated, &dep.UpdatedBy, &dep.BundleName,
-			&dep.BundleURI, &dep.LocalBundleURI,
-		)
-		deployments = append(deployments, dep)
-	}
-
-	return
-}
-
-// todo: is this a sufficient level of tracking?
 func setDeploymentResults(results apiDeploymentResults) error {
 
 	log.Debugf("setDeploymentResults: %v", results)
