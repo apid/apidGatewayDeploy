@@ -30,9 +30,9 @@ Alternatively, you may run without creating an executable with:
     
 Command line options:
 
-* -bundleFile <file path> -configFile <file path>
+* -bundle <file path> -config <file path>
 
-If you use the `-bundleFile` option, the server will start using a clean database that contains only the
+If you use the `-bundle` option, the server will start using a clean database that contains only the
  deployment bundle specified. 
  
 Once the process is running, you should be able to manually give the plugin's API a whirl...
