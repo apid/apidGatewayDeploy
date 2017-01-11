@@ -99,6 +99,12 @@ func insertTestDeployment(bundleFile, bundleConfig string) error {
 	if err != nil {
 		return err
 	}
+	apiGatewayDeploy.SetDB(db)
+
+	err = apiGatewayDeploy.InitDB(db)
+	if err != nil {
+		return err
+	}
 
 	tx, err := db.Begin()
 	if err != nil {
@@ -115,6 +121,8 @@ func insertTestDeployment(bundleFile, bundleConfig string) error {
 	if err != nil {
 		return err
 	}
+
+	apiGatewayDeploy.InitAPI()
 
 	return nil
 }

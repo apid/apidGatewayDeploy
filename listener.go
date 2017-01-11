@@ -50,7 +50,7 @@ func processSnapshot(snapshot *common.Snapshot) {
 		log.Panicf("Unable to access database: %v", err)
 	}
 
-	err = initDB(db)
+	err = InitDB(db)
 	if err != nil {
 		log.Panicf("Unable to initialize database: %v", err)
 	}
@@ -83,7 +83,7 @@ func processSnapshot(snapshot *common.Snapshot) {
 		log.Panicf("Error committing Snapshot change: %v", err)
 	}
 
-	setDB(db)
+	SetDB(db)
 	log.Debug("Snapshot processed")
 }
 

@@ -36,9 +36,9 @@ var _ = BeforeSuite(func() {
 
 	db, err := data.DB()
 	Expect(err).NotTo(HaveOccurred())
-	err = initDB(db)
+	err = InitDB(db)
 	Expect(err).NotTo(HaveOccurred())
-	setDB(db)
+	SetDB(db)
 
 	router := apid.API().Router()
 	// fake an unreliable bundle repo

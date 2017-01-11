@@ -35,7 +35,7 @@ type SQLExec interface {
 	Exec(query string, args ...interface{}) (sql.Result, error)
 }
 
-func initDB(db apid.DB) error {
+func InitDB(db apid.DB) error {
 	_, err := db.Exec(`
 	CREATE TABLE IF NOT EXISTS etag (
 		value integer
@@ -77,10 +77,10 @@ func getDB() apid.DB {
 	return db
 }
 
-func setDB(db apid.DB) {
+func SetDB(db apid.DB) {
 	dbMux.Lock()
 	if unsafeDB == nil { // init API when DB is initialized
-		go initAPI()
+		go InitAPI()
 	}
 	unsafeDB = db
 	dbMux.Unlock()
@@ -109,7 +109,10 @@ func incrementETag() error {
 func getETag() (string, error) {
 
 	var eTag string
-	err := getDB().QueryRow("SELECT value FROM etag").Scan(&eTag)
+	db := getDB()
+	row := db.QueryRow("SELECT value FROM etag")
+	err := row.Scan(&eTag)
+	//err := getDB().QueryRow("SELECT value FROM etag").Scan(&eTag)
 	if err != nil {
 		log.Errorf("select etag failed: %v", err)
 		return "", err

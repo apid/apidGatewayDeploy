@@ -55,7 +55,7 @@ type apiDeploymentResults []apiDeploymentResult
 
 const deploymentsEndpoint = "/deployments"
 
-func initAPI() {
+func InitAPI() {
 	services.API().HandleFunc(deploymentsEndpoint, apiGetCurrentDeployments).Methods("GET")
 	services.API().HandleFunc(deploymentsEndpoint, apiSetDeploymentResults).Methods("POST")
 }
