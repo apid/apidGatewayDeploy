@@ -33,7 +33,7 @@ Command line options:
 * -bundleFile <file path> -configFile <file path>
 
 If you use the `-bundleFile` option, the server will start using a clean database that contains only the
- deployment manifest specified. 
+ deployment bundle specified. 
  
 Once the process is running, you should be able to manually give the plugin's API a whirl...
 
