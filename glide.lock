@@ -1,19 +1,26 @@
-hash: fe03e1a208d3f729a210725f77887d0a77f06129d46309140d2e5e9b2513b77e
-updated: 2016-10-24T14:39:39.290139587-07:00
+hash: 2077b30f961b5e18e50929486e03f5e258652a02e6afbb3e97fe8bfa141fe455
+updated: 2017-01-11T14:09:34.259078396-08:00
 imports:
 - name: github.com/30x/apid
-  version: 56f87c3a7fb9909be0311b964bad009197e5cd64
+  version: b260c44d0aa107d0592e223e39408ac282a30df4
   subpackages:
   - api
   - config
   - data
+  - data/wrap
   - events
   - factory
   - logger
-- name: github.com/30x/apidApigeeSync
-  version: e62f875f6b6c014791d93a816b7413a0cf2ec98a
+- name: github.com/apigee-labs/transicator
+  version: 63c7cb3e1ec29c04538c38eebe767f3cb82d0e1f
+  subpackages:
+  - common
 - name: github.com/fsnotify/fsnotify
   version: bd2828f9f176e52d7222e565abb2d338d3f3c103
+- name: github.com/golang/protobuf
+  version: df1d3ca07d2d07bba352d5b73c4313b4e2a6203e
+  subpackages:
+  - proto
 - name: github.com/gorilla/context
   version: 08b5f424b9271eedf6f9f0ce86cb9396ed337a42
 - name: github.com/gorilla/mux
@@ -34,7 +41,7 @@ imports:
 - name: github.com/magiconair/properties
   version: 0723e352fa358f9322c938cc2dadda874e9151a9
 - name: github.com/mattn/go-sqlite3
-  version: e5a3c16c5c1d80b24f633e68aecd6b0702786d3d
+  version: ca5e3819723d8eeaf170ad510e7da1d6d2e94a08
 - name: github.com/mitchellh/mapstructure
   version: f3009df150dadf309fdee4a54ed65c124afad715
 - name: github.com/pelletier/go-buffruneio
@@ -46,7 +53,7 @@ imports:
 - name: github.com/pkg/sftp
   version: 4d0e916071f68db74f8a73926335f809396d6b42
 - name: github.com/Sirupsen/logrus
-  version: 3ec0642a7fb6488f65b06f9040adc67e3990296a
+  version: 4b6ea7319e214d98c938f12692336f7ca9348d6b
 - name: github.com/spf13/afero
   version: 52e4a6cfac46163658bd4f123c49b6ee7dc75f78
   subpackages:
@@ -57,9 +64,9 @@ imports:
 - name: github.com/spf13/jwalterweatherman
   version: 33c24e77fb80341fe7130ee7c594256ff08ccc46
 - name: github.com/spf13/pflag
-  version: 5ccb023bc27df288a957c5e994cd44fd19619465
+  version: 25f8b5b07aece3207895bf19f7ab517eb3b22a40
 - name: github.com/spf13/viper
-  version: 80ab6657f9ec7e5761f6603320d3d58dfe6970f6
+  version: 5ed0fc31f7f453625df314d8e66b9791e8d13003
 - name: golang.org/x/crypto
   version: 8291fff38ab6f2928eca153913c3b5773aa0de98
   subpackages:
@@ -67,6 +74,10 @@ imports:
   - ed25519
   - ed25519/internal/edwards25519
   - ssh
+- name: golang.org/x/net
+  version: 60c41d1de8da134c05b7b40154a9a82bf5b7edb9
+  subpackages:
+  - context
 - name: golang.org/x/sys
   version: c200b10b5d5e122be351b67af224adc6128af5bf
   subpackages:
@@ -79,12 +90,8 @@ imports:
 - name: gopkg.in/yaml.v2
   version: a5b47d31c556af34a302ce5d659e6fea44d90de0
 testImports:
-- name: github.com/30x/keymaster
-  version: 9dacc49a25917fe0ed621235950a523170da9a2b
-  subpackages:
-  - client
 - name: github.com/onsi/ginkgo
-  version: 462326b1628e124b23f42e87a8f2750e3c4e2d24
+  version: a23f924ce96d61f963fb6219b8ff069d8d768cc2
   subpackages:
   - config
   - internal/codelocation
@@ -99,13 +106,16 @@ testImports:
   - internal/writer
   - reporters
   - reporters/stenographer
+  - reporters/stenographer/support/go-colorable
+  - reporters/stenographer/support/go-isatty
   - types
 - name: github.com/onsi/gomega
-  version: a78ae492d53aad5a7a232d0d0462c14c400e3ee7
+  version: f1f0f388b31eca4e2cbe7a6dd8a3a1dfddda5b1c
   subpackages:
   - format
   - internal/assertion
   - internal/asyncassertion
+  - internal/oraclematcher
   - internal/testingtsupport
   - matchers
   - matchers/support/goraph/bipartitegraph
