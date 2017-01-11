@@ -8,8 +8,10 @@ deploy and update a locally configured gateway.
 
 This plugin simply tracks counters based on called URIs:
  
-* `GET /deployments/current` - retrieve current deployment
-* `POST /deployments/{id}` - update specified deployment 
+* `GET /deployments/` - retrieve current deployment
+* `POST /deployments/` - update deployments
+
+See [apidGatewayDeploy-api.yaml]() for full spec.
 
 ## Building and running standalone
 
@@ -28,15 +30,15 @@ Alternatively, you may run without creating an executable with:
     
 Command line options:
 
-* -manifest <file path>
+* -bundleFile <file path> -configFile <file path>
 
-If you use the `-manifest` option, the server will start using a clean database that contains only the
+If you use the `-bundleFile` option, the server will start using a clean database that contains only the
  deployment manifest specified. 
  
 Once the process is running, you should be able to manually give the plugin's API a whirl...
 
-    curl -i localhost:9000/deployments/current 
-    curl -i -X POST localhost:9000/deployments/entityId -d '{ "status": "SUCCESS" }' 
+    curl -i localhost:9000/deployments/
+    curl -i -X POST localhost:9000/deployments -d '{ ... }'
 
 The following may be interesting env vars for configuration:
 
