@@ -92,7 +92,7 @@ func insertTestDeployment(bundleFile, bundleConfig string, deploymentID string) 
 		ApidClusterID:      deploymentID,
 		DataScopeID:        deploymentID,
 		BundleConfigJSON:   bundleConfig,
-		ConfigJSON:         "",
+		ConfigJSON:         bundleConfig,
 		Status:             "",
 		Created:            "",
 		CreatedBy:          "",

@@ -29,15 +29,15 @@ type errorResponse struct {
 }
 
 type apiDeployment struct {
-	ID                string `json:"id"`
-	ScopeId           string `json:"scopeId"`
-	Created           string `json:"created"`
-	CreatedBy         string `json:"createdBy"`
-	Updated           string `json:"updated"`
-	UpdatedBy         string `json:"updatedBy"`
-	ConfigurationJson string `json:"configurationJson"`
-	DisplayName       string `json:"displayName"`
-	URI               string `json:"uri"`
+	ID                string                 `json:"id"`
+	ScopeId           string                 `json:"scopeId"`
+	Created           string                 `json:"created"`
+	CreatedBy         string                 `json:"createdBy"`
+	Updated           string                 `json:"updated"`
+	UpdatedBy         string                 `json:"updatedBy"`
+	ConfigurationJson map[string]interface{} `json:"configurationJson"`
+	DisplayName       string                 `json:"displayName"`
+	URI               string                 `json:"uri"`
 }
 
 // sent to client
@@ -187,6 +187,14 @@ func sendDeployments(w http.ResponseWriter, dataDeps []DataDeployment, eTag stri
 	var apiDeps apiDeploymentResponse
 
 	for _, d := range dataDeps {
+
+		var configJsonObj map[string]interface{}
+		if d.ConfigJSON != "" {
+			if err := json.Unmarshal([]byte(d.ConfigJSON), &configJsonObj); err != nil {
+				log.Errorf("Unable to deserialize config json: %s", err)
+			}
+		}
+
 		apiDeps = append(apiDeps, apiDeployment{
 			ID:                d.ID,
 			ScopeId:           d.DataScopeID,
@@ -194,7 +202,7 @@ func sendDeployments(w http.ResponseWriter, dataDeps []DataDeployment, eTag stri
 			CreatedBy:         d.CreatedBy,
 			Updated:           d.Updated,
 			UpdatedBy:         d.UpdatedBy,
-			ConfigurationJson: d.ConfigJSON,
+			ConfigurationJson: configJsonObj,
 			DisplayName:       d.BundleName,
 			URI:               d.LocalBundleURI,
 		})
