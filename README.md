@@ -30,10 +30,35 @@ Alternatively, you may run without creating an executable with:
     
 Command line options:
 
-* -bundle <file path> -config <file path>
+* -deployments <file path>
 
-If you use the `-bundle` option, the server will start using a clean database that contains only the
- deployment bundle specified. 
+If you use the `-deployments` option, the server will start using a clean database that contains only the
+ deployments contained in the file specified. 
+ 
+The file should be the JSON for an array of deployments. JSON format is:
+
+        [
+          {
+            "id": "",
+            "scopeId": "",
+            "created": "",
+            "createdBy": "",
+            "updated": "",
+            "updatedBy": "",
+            "configuration": {
+              "key": "value"
+            },
+            "bundleConfiguration": {
+              "key": "value"
+            },
+            "displayName": "",
+            "uri": ""
+          }
+        ]
+ 
+Notes:
+* id must be unique
+* uri should point to a bundle file
  
 Once the process is running, you should be able to manually give the plugin's API a whirl...
 

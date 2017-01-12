@@ -2,9 +2,9 @@ package apiGatewayDeploy
 
 import (
 	"database/sql"
+	"fmt"
 	"github.com/30x/apid"
 	"sync"
-	"fmt"
 )
 
 var (
@@ -13,22 +13,22 @@ var (
 )
 
 type DataDeployment struct {
-	ID                string
-	BundleConfigID    string
-	ApidClusterID     string
-	DataScopeID       string
-	BundleConfigJSON  string
-	ConfigJSON  	  string
-	Status		  string
-	Created		  string
-	CreatedBy         string
-	Updated           string
-	UpdatedBy         string
-	BundleName	  string
-	BundleURI	  string
-	BundleChecksum	  string
+	ID                 string
+	BundleConfigID     string
+	ApidClusterID      string
+	DataScopeID        string
+	BundleConfigJSON   string
+	ConfigJSON         string
+	Status             string
+	Created            string
+	CreatedBy          string
+	Updated            string
+	UpdatedBy          string
+	BundleName         string
+	BundleURI          string
+	BundleChecksum     string
 	BundleChecksumType string
-	LocalBundleURI    string
+	LocalBundleURI     string
 }
 
 type SQLExec interface {
@@ -171,7 +171,7 @@ func deleteDeployment(tx *sql.Tx, depID string) error {
 		return err
 	}
 
-	deploymentsChanged<- depID
+	deploymentsChanged <- depID
 
 	log.Debugf("deleteDeployment %s succeeded", depID)
 	return err
@@ -190,7 +190,7 @@ func getReadyDeployments() (deployments []DataDeployment, err error) {
 	WHERE local_bundle_uri != ""
 	`)
 	if err != nil {
-		if err == sql.ErrNoRows{
+		if err == sql.ErrNoRows {
 			return deployments, nil
 		}
 		log.Errorf("Error querying deployments: %v", err)

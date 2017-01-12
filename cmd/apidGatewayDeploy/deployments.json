@@ -1,0 +1,24 @@
+[
+  {
+    "id": "api_no_change_blocking",
+    "scopeId": "api_no_change_blocking",
+    "created": "",
+    "createdBy": "",
+    "updated": "",
+    "updatedBy": "",
+    "configuration": {
+      "name": "/bundles/1",
+      "uri": "http://127.0.0.1:53589/bundles/1",
+      "checksumType": "crc-32",
+      "checksum": "c65a0f2a"
+    },
+    "bundleConfiguration": {
+      "name": "/bundles/1",
+      "uri": "http://127.0.0.1:53589/bundles/1",
+      "checksumType": "crc-32",
+      "checksum": "c65a0f2a"
+    },
+    "displayName": "api_no_change_blocking",
+    "uri": "x"
+  }
+]

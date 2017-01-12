@@ -28,20 +28,21 @@ type errorResponse struct {
 	Reason    string `json:"reason"`
 }
 
-type apiDeployment struct {
-	ID                string `json:"id"`
-	ScopeId           string `json:"scopeId"`
-	Created           string `json:"created"`
-	CreatedBy         string `json:"createdBy"`
-	Updated           string `json:"updated"`
-	UpdatedBy         string `json:"updatedBy"`
-	ConfigurationJson string `json:"configurationJson"`
-	DisplayName       string `json:"displayName"`
-	URI               string `json:"uri"`
+type ApiDeployment struct {
+	ID               string          `json:"id"`
+	ScopeId          string          `json:"scopeId"`
+	Created          string          `json:"created"`
+	CreatedBy        string          `json:"createdBy"`
+	Updated          string          `json:"updated"`
+	UpdatedBy        string          `json:"updatedBy"`
+	ConfigJson       json.RawMessage `json:"configuration"`
+	BundleConfigJson json.RawMessage `json:"bundleConfiguration"`
+	DisplayName      string          `json:"displayName"`
+	URI              string          `json:"uri"`
 }
 
 // sent to client
-type apiDeploymentResponse []apiDeployment
+type ApiDeploymentResponse []ApiDeployment
 
 type apiDeploymentResult struct {
 	ID        string `json:"id"`
@@ -184,17 +185,18 @@ func apiGetCurrentDeployments(w http.ResponseWriter, r *http.Request) {
 
 func sendDeployments(w http.ResponseWriter, dataDeps []DataDeployment, eTag string) {
 
-	var apiDeps apiDeploymentResponse
+	var apiDeps ApiDeploymentResponse
 
 	for _, d := range dataDeps {
-		apiDeps = append(apiDeps, apiDeployment{
+		apiDeps = append(apiDeps, ApiDeployment{
 			ID:                d.ID,
 			ScopeId:           d.DataScopeID,
 			Created:           d.Created,
 			CreatedBy:         d.CreatedBy,
 			Updated:           d.Updated,
 			UpdatedBy:         d.UpdatedBy,
-			ConfigurationJson: d.ConfigJSON,
+			BundleConfigJson:  []byte(d.BundleConfigJSON),
+			ConfigJson:        []byte(d.ConfigJSON),
 			DisplayName:       d.BundleName,
 			URI:               d.LocalBundleURI,
 		})

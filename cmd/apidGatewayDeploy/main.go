@@ -2,24 +2,19 @@ package main
 
 import (
 	"flag"
-	"io/ioutil"
-	"os"
-	"strings"
-
-	"fmt"
-
 	"github.com/30x/apid"
 	"github.com/30x/apid/factory"
-	"github.com/30x/apidGatewayDeploy"
 	_ "github.com/30x/apidGatewayDeploy"
+	"io/ioutil"
+	"github.com/30x/apidGatewayDeploy"
+	"os"
+	"encoding/json"
 )
 
 func main() {
-	bundleFlag := flag.String("bundle", "", "file path to a bundle file (for testing)")
-	configFlag := flag.String("config", "", "file path to a bundle config file (for testing)")
+	deploymentsFlag := flag.String("deployments", "", "file path to a deployments file (for testing)")
 	flag.Parse()
-	bundleFile := *bundleFlag
-	configFile := *configFlag
+	deploymentsFile := *deploymentsFlag
 
 	apid.Initialize(factory.DefaultServicesFactory())
 
@@ -28,10 +23,9 @@ func main() {
 
 	configService := apid.Config()
 
-	// if bundle is specified, start in a temp dir for testing
-	var bundleConfig string
-	if bundleFile != "" {
-		log.Printf("Running in temp dir with bundle file: %s", bundleFile)
+	var deployments apiGatewayDeploy.ApiDeploymentResponse
+	if deploymentsFile != "" {
+		log.Printf("Running in temp dir using deployments file: %s", deploymentsFile)
 		tmpDir, err := ioutil.TempDir("", "apidGatewayDeploy")
 		if err != nil {
 			log.Panicf("ERROR: Unable to create temp dir", err)
@@ -39,37 +33,27 @@ func main() {
 		defer os.RemoveAll(tmpDir)
 
 		configService.Set("data_path", tmpDir)
-		configService.Set("gatewaydeploy_bundle_dir", tmpDir)
+		configService.Set("gatewaydeploy_bundle_dir", tmpDir) // todo: legacy?
 
-		if configFile != "" {
-			bundleConfigBytes, err := ioutil.ReadFile(configFile)
+		if deploymentsFile != "" {
+			bytes, err := ioutil.ReadFile(deploymentsFile)
 			if err != nil {
-				log.Errorf("ERROR: Unable to read bundle config file at %s", configFile)
+				log.Errorf("ERROR: Unable to read bundle config file at %s", deploymentsFile)
 				return
 
 			}
-			bundleConfig = string(bundleConfigBytes)
+
+			err = json.Unmarshal(bytes, &deployments)
+			if err != nil {
+				log.Errorf("ERROR: Unable to parse deployments %v", err)
+				return
+			}
 		}
 	}
 
 	apid.InitializePlugins()
 
-	if bundleFile != "" {
-		if strings.ContainsAny(bundleFile, ",") {
-			for deploymentCount, singleBundleFile := range strings.Split(bundleFile, ",") {
-				deployment := fmt.Sprintf("testDeployment-%d", deploymentCount)
-				err := insertTestDeployment(singleBundleFile, bundleConfig, deployment)
-				if err != nil {
-					log.Fatal(err)
-				}
-			}
-		} else {
-			err := insertTestDeployment(bundleFile, bundleConfig, "testDeployment")
-			if err != nil {
-				log.Fatal(err)
-			}
-		}
-	}
+	insertTestDeployments(deployments)
 
 	// print the base url to the console
 	basePath := "/deployments"
@@ -84,25 +68,10 @@ func main() {
 	log.Fatalf("Error. Is something already running on port %d? %s", port, err)
 }
 
-func insertTestDeployment(bundleFile, bundleConfig string, deploymentID string) error {
+func insertTestDeployments(deployments apiGatewayDeploy.ApiDeploymentResponse) error {
 
-	dep := apiGatewayDeploy.DataDeployment{
-		ID:                 deploymentID,
-		BundleConfigID:     deploymentID,
-		ApidClusterID:      deploymentID,
-		DataScopeID:        deploymentID,
-		BundleConfigJSON:   bundleConfig,
-		ConfigJSON:         "",
-		Status:             "",
-		Created:            "",
-		CreatedBy:          "",
-		Updated:            "",
-		UpdatedBy:          "",
-		BundleName:         deploymentID,
-		BundleURI:          bundleFile,
-		BundleChecksum:     "",
-		BundleChecksumType: "",
-		LocalBundleURI:     bundleFile,
+	if len(deployments) == 0 {
+		return nil
 	}
 
 	log := apid.Log()
@@ -123,10 +92,34 @@ func insertTestDeployment(bundleFile, bundleConfig string, deploymentID string) 
 		return err
 	}
 
-	err = apiGatewayDeploy.InsertDeployment(tx, dep)
-	if err != nil {
-		log.Error("Unable to insert deployment")
-		return err
+	for _, ad := range deployments {
+
+		dep := apiGatewayDeploy.DataDeployment{
+			ID:                 ad.ID,
+			BundleConfigID:     ad.ID,
+			ApidClusterID:      ad.ID,
+			DataScopeID:        ad.ScopeId,
+			BundleConfigJSON:   string(ad.BundleConfigJson),
+			ConfigJSON:         string(ad.ConfigJson),
+			Status:             "",
+			Created:            "",
+			CreatedBy:          "",
+			Updated:            "",
+			UpdatedBy:          "",
+			BundleName:         deploymentID,
+			BundleURI:          bundleFile,
+			BundleChecksum:     "",
+			BundleChecksumType: "",
+			LocalBundleURI:     bundleFile,
+		}
+
+
+		err = apiGatewayDeploy.InsertDeployment(tx, dep)
+		if err != nil {
+			log.Error("Unable to insert deployment")
+			return err
+		}
+
 	}
 
 	err = tx.Commit()

@@ -44,7 +44,7 @@ var _ = Describe("api", func() {
 			Expect(err).ShouldNot(HaveOccurred())
 			defer res.Body.Close()
 
-			var depRes apiDeploymentResponse
+			var depRes ApiDeploymentResponse
 			body, err := ioutil.ReadAll(res.Body)
 			Expect(err).ShouldNot(HaveOccurred())
 			json.Unmarshal(body, &depRes)
@@ -57,8 +57,15 @@ var _ = Describe("api", func() {
 			Expect(dep.ScopeId).To(Equal(deploymentID))
 			Expect(dep.DisplayName).To(Equal(deploymentID))
 
-			// todo: more tests
-			//dep.ConfigurationJson
+			var config bundleConfigJson
+
+			err = json.Unmarshal(dep.ConfigJson, &config)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(config.Name).To(Equal("/bundles/1"))
+
+			err = json.Unmarshal(dep.BundleConfigJson, &config)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(config.Name).To(Equal("/bundles/1"))
 		})
 
 		It("should get 304 for no change", func() {
@@ -124,7 +131,7 @@ var _ = Describe("api", func() {
 				defer res.Body.Close()
 				Expect(res.StatusCode).To(Equal(http.StatusOK))
 
-				var depRes apiDeploymentResponse
+				var depRes ApiDeploymentResponse
 				body, err := ioutil.ReadAll(res.Body)
 				Expect(err).ShouldNot(HaveOccurred())
 				json.Unmarshal(body, &depRes)
@@ -315,7 +322,7 @@ func insertTestDeployment(testServer *httptest.Server, deploymentID string) {
 		ApidClusterID: deploymentID,
 		DataScopeID: deploymentID,
 		BundleConfigJSON: string(bundleJson),
-		ConfigJSON: "",
+		ConfigJSON: string(bundleJson),
 		Status: "",
 		Created: "",
 		CreatedBy: "",
