@@ -2,12 +2,16 @@ package main
 
 import (
 	"flag"
+	"io/ioutil"
+	"os"
+	"strings"
+
+	"fmt"
+
 	"github.com/30x/apid"
 	"github.com/30x/apid/factory"
-	_ "github.com/30x/apidGatewayDeploy"
-	"io/ioutil"
 	"github.com/30x/apidGatewayDeploy"
-	"os"
+	_ "github.com/30x/apidGatewayDeploy"
 )
 
 func main() {
@@ -51,9 +55,19 @@ func main() {
 	apid.InitializePlugins()
 
 	if bundleFile != "" {
-		err := insertTestDeployment(bundleFile, bundleConfig)
-		if err != nil {
-			log.Fatal(err)
+		if strings.ContainsAny(bundleFile, ",") {
+			for deploymentCount, singleBundleFile := range strings.Split(bundleFile, ",") {
+				deployment := fmt.Sprintf("testDeployment-%d", deploymentCount)
+				err := insertTestDeployment(singleBundleFile, bundleConfig, deployment)
+				if err != nil {
+					log.Fatal(err)
+				}
+			}
+		} else {
+			err := insertTestDeployment(bundleFile, bundleConfig, "testDeployment")
+			if err != nil {
+				log.Fatal(err)
+			}
 		}
 	}
 
@@ -70,27 +84,25 @@ func main() {
 	log.Fatalf("Error. Is something already running on port %d? %s", port, err)
 }
 
-func insertTestDeployment(bundleFile, bundleConfig string) error {
-
-	deploymentID := "testDeployment"
+func insertTestDeployment(bundleFile, bundleConfig string, deploymentID string) error {
 
 	dep := apiGatewayDeploy.DataDeployment{
-		ID: deploymentID,
-		BundleConfigID: deploymentID,
-		ApidClusterID: deploymentID,
-		DataScopeID: deploymentID,
-		BundleConfigJSON: bundleConfig,
-		ConfigJSON: "",
-		Status: "",
-		Created: "",
-		CreatedBy: "",
-		Updated: "",
-		UpdatedBy: "",
-		BundleName: deploymentID,
-		BundleURI: bundleFile,
-		BundleChecksum: "",
+		ID:                 deploymentID,
+		BundleConfigID:     deploymentID,
+		ApidClusterID:      deploymentID,
+		DataScopeID:        deploymentID,
+		BundleConfigJSON:   bundleConfig,
+		ConfigJSON:         "",
+		Status:             "",
+		Created:            "",
+		CreatedBy:          "",
+		Updated:            "",
+		UpdatedBy:          "",
+		BundleName:         deploymentID,
+		BundleURI:          bundleFile,
+		BundleChecksum:     "",
 		BundleChecksumType: "",
-		LocalBundleURI: bundleFile,
+		LocalBundleURI:     bundleFile,
 	}
 
 	log := apid.Log()
