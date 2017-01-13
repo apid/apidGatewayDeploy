@@ -106,11 +106,11 @@ func insertTestDeployments(deployments apiGatewayDeploy.ApiDeploymentResponse) e
 			CreatedBy:          "",
 			Updated:            "",
 			UpdatedBy:          "",
-			BundleName:         deploymentID,
-			BundleURI:          bundleFile,
+			BundleName:         ad.DisplayName,
+			BundleURI:          ad.URI,
 			BundleChecksum:     "",
 			BundleChecksumType: "",
-			LocalBundleURI:     bundleFile,
+			LocalBundleURI:     ad.URI,
 		}
 
 
