@@ -1,8 +1,11 @@
 package: github.com/30x/apidGatewayDeploy
 import:
 - package: github.com/30x/apid
-- package: github.com/30x/apidApigeeSync
-- package: github.com/gorilla/mux
+  version: master
+- package: github.com/apigee-labs/transicator/common
+  version: master
 testImport:
 - package: github.com/onsi/ginkgo
+  version: master
 - package: github.com/onsi/gomega
+  version: master

@@ -6,54 +6,58 @@ import (
 	"github.com/30x/apid/factory"
 	_ "github.com/30x/apidGatewayDeploy"
 	"io/ioutil"
-	"github.com/apigee-labs/transicator/common"
 	"github.com/30x/apidGatewayDeploy"
 	"os"
+	"encoding/json"
 )
 
 func main() {
-	manifestFlag := flag.String("manifest", "", "file path to a manifest yaml file")
+	deploymentsFlag := flag.String("deployments", "", "file path to a deployments file (for testing)")
 	flag.Parse()
-	manifestFile := *manifestFlag
+	deploymentsFile := *deploymentsFlag
 
-	// initialize apid using default services
 	apid.Initialize(factory.DefaultServicesFactory())
 
 	log := apid.Log()
 	log.Debug("initializing...")
 
-	config := apid.Config()
+	configService := apid.Config()
 
-	// if manifest is specified, start with only the manifest using a temp dir
-	var manifest []byte
-	if manifestFile != "" {
-		var err error
-		manifest, err = ioutil.ReadFile(manifestFile)
-		if err != nil {
-			log.Errorf("ERROR: Unable to read manifest at %s", manifestFile)
-			return
-		}
-
-		log.Printf("Running in temp dir with manifest: %s", manifestFile)
+	var deployments apiGatewayDeploy.ApiDeploymentResponse
+	if deploymentsFile != "" {
+		log.Printf("Running in temp dir using deployments file: %s", deploymentsFile)
 		tmpDir, err := ioutil.TempDir("", "apidGatewayDeploy")
 		if err != nil {
 			log.Panicf("ERROR: Unable to create temp dir", err)
 		}
 		defer os.RemoveAll(tmpDir)
-		config.Set("data_path", tmpDir)
-		config.Set("gatewaydeploy_bundle_dir", tmpDir)
+
+		configService.Set("data_path", tmpDir)
+		configService.Set("gatewaydeploy_bundle_dir", tmpDir) // todo: legacy?
+
+		if deploymentsFile != "" {
+			bytes, err := ioutil.ReadFile(deploymentsFile)
+			if err != nil {
+				log.Errorf("ERROR: Unable to read bundle config file at %s", deploymentsFile)
+				return
+
+			}
+
+			err = json.Unmarshal(bytes, &deployments)
+			if err != nil {
+				log.Errorf("ERROR: Unable to parse deployments %v", err)
+				return
+			}
+		}
 	}
 
-	// this will call all initialization functions on all registered plugins
 	apid.InitializePlugins()
 
-	if manifest != nil {
-		insertTestRecord(manifest)
-	}
+	insertTestDeployments(deployments)
 
 	// print the base url to the console
 	basePath := "/deployments"
-	port := config.GetString("api_port")
+	port := configService.GetString("api_port")
 	log.Print()
 	log.Printf("API is at: http://localhost:%s%s", port, basePath)
 	log.Print()
@@ -64,19 +68,66 @@ func main() {
 	log.Fatalf("Error. Is something already running on port %d? %s", port, err)
 }
 
-func insertTestRecord(manifest []byte) {
+func insertTestDeployments(deployments apiGatewayDeploy.ApiDeploymentResponse) error {
 
-	row := common.Row{}
-	row["id"] = &common.ColumnVal{Value: "deploymentID"}
-	row["manifest_body"] = &common.ColumnVal{Value: string(manifest)}
-
-	var event = common.Snapshot{}
-	event.Tables = []common.Table{
-		{
-			Name: apiGatewayDeploy.MANIFEST_TABLE,
-			Rows: []common.Row{row},
-		},
+	if len(deployments) == 0 {
+		return nil
 	}
 
-	apid.Events().Emit(apiGatewayDeploy.APIGEE_SYNC_EVENT, &event)
+	log := apid.Log()
+
+	db, err := apid.Data().DB()
+	if err != nil {
+		return err
+	}
+	apiGatewayDeploy.SetDB(db)
+
+	err = apiGatewayDeploy.InitDB(db)
+	if err != nil {
+		return err
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+
+	for _, ad := range deployments {
+
+		dep := apiGatewayDeploy.DataDeployment{
+			ID:                 ad.ID,
+			BundleConfigID:     ad.ID,
+			ApidClusterID:      ad.ID,
+			DataScopeID:        ad.ScopeId,
+			BundleConfigJSON:   string(ad.BundleConfigJson),
+			ConfigJSON:         string(ad.ConfigJson),
+			Status:             "",
+			Created:            "",
+			CreatedBy:          "",
+			Updated:            "",
+			UpdatedBy:          "",
+			BundleName:         ad.DisplayName,
+			BundleURI:          ad.URI,
+			BundleChecksum:     "",
+			BundleChecksumType: "",
+			LocalBundleURI:     ad.URI,
+		}
+
+
+		err = apiGatewayDeploy.InsertDeployment(tx, dep)
+		if err != nil {
+			log.Error("Unable to insert deployment")
+			return err
+		}
+
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
+
+	apiGatewayDeploy.InitAPI()
+
+	return nil
 }

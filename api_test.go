@@ -1,30 +1,30 @@
 package apiGatewayDeploy
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"encoding/json"
+	"io/ioutil"
 	"time"
+	"bytes"
 )
 
 var _ = Describe("api", func() {
 
-	Context("GET /deployments/current", func() {
+	BeforeEach(func() {
+		_, err := getDB().Exec("DELETE FROM deployments")
+		Expect(err).ShouldNot(HaveOccurred())
+	})
 
-		It("should get 404 if no deployments", func() {
+	Context("GET /deployments", func() {
 
-			db := getDB()
-			_, err := db.Exec("DELETE FROM gateway_deploy_deployment")
-			Expect(err).ShouldNot(HaveOccurred())
+		It("should get an empty array if no deployments", func() {
 
 			uri, err := url.Parse(testServer.URL)
-			uri.Path = "/deployments/current"
+			uri.Path = deploymentsEndpoint
 
 			res, err := http.Get(uri.String())
 			Expect(err).ShouldNot(HaveOccurred())
@@ -32,27 +32,40 @@ var _ = Describe("api", func() {
 			Expect(res.StatusCode).Should(Equal(http.StatusNotFound))
 		})
 
-		It("should get current deployment", func() {
+		It("should get current deployments", func() {
 
 			deploymentID := "api_get_current"
 			insertTestDeployment(testServer, deploymentID)
 
 			uri, err := url.Parse(testServer.URL)
-			uri.Path = "/deployments/current"
+			uri.Path = deploymentsEndpoint
 
 			res, err := http.Get(uri.String())
 			Expect(err).ShouldNot(HaveOccurred())
 			defer res.Body.Close()
 
-			var depRes deployment
+			var depRes ApiDeploymentResponse
 			body, err := ioutil.ReadAll(res.Body)
 			Expect(err).ShouldNot(HaveOccurred())
 			json.Unmarshal(body, &depRes)
 
-			Expect(depRes.DeploymentID).Should(Equal(deploymentID))
-			Expect(depRes.Bundles[0].Scope).Should(Equal("some-scope"))
+			Expect(len(depRes)).To(Equal(1))
 
-			Expect(res.Header.Get("etag")).Should(Equal(deploymentID))
+			dep := depRes[0]
+
+			Expect(dep.ID).To(Equal(deploymentID))
+			Expect(dep.ScopeId).To(Equal(deploymentID))
+			Expect(dep.DisplayName).To(Equal(deploymentID))
+
+			var config bundleConfigJson
+
+			err = json.Unmarshal(dep.ConfigJson, &config)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(config.Name).To(Equal("/bundles/1"))
+
+			err = json.Unmarshal(dep.BundleConfigJson, &config)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(config.Name).To(Equal("/bundles/1"))
 		})
 
 		It("should get 304 for no change", func() {
@@ -61,7 +74,7 @@ var _ = Describe("api", func() {
 			insertTestDeployment(testServer, deploymentID)
 
 			uri, err := url.Parse(testServer.URL)
-			uri.Path = "/deployments/current"
+			uri.Path = deploymentsEndpoint
 			res, err := http.Get(uri.String())
 			Expect(err).ShouldNot(HaveOccurred())
 			defer res.Body.Close()
@@ -76,14 +89,10 @@ var _ = Describe("api", func() {
 			Expect(res.StatusCode).To(Equal(http.StatusNotModified))
 		})
 
-		It("should get 404 after blocking if no deployment", func() {
-
-			db := getDB()
-			_, err := db.Exec("DELETE FROM gateway_deploy_deployment")
-			Expect(err).ShouldNot(HaveOccurred())
+		It("should get empty set after blocking if no deployments", func() {
 
 			uri, err := url.Parse(testServer.URL)
-			uri.Path = "/deployments/current"
+			uri.Path = deploymentsEndpoint
 
 			query := uri.Query()
 			query.Add("block", "1")
@@ -91,7 +100,9 @@ var _ = Describe("api", func() {
 			res, err := http.Get(uri.String())
 			Expect(err).ShouldNot(HaveOccurred())
 			defer res.Body.Close()
-			Expect(res.StatusCode).Should(Equal(http.StatusNotFound))
+
+			Expect(res.StatusCode).Should(Equal(http.StatusOK))
+
 		})
 
 		It("should get new deployment after blocking", func(done Done) {
@@ -99,7 +110,7 @@ var _ = Describe("api", func() {
 			deploymentID := "api_get_current_blocking"
 			insertTestDeployment(testServer, deploymentID)
 			uri, err := url.Parse(testServer.URL)
-			uri.Path = "/deployments/current"
+			uri.Path = deploymentsEndpoint
 			res, err := http.Get(uri.String())
 			Expect(err).ShouldNot(HaveOccurred())
 			defer res.Body.Close()
@@ -120,27 +131,25 @@ var _ = Describe("api", func() {
 				defer res.Body.Close()
 				Expect(res.StatusCode).To(Equal(http.StatusOK))
 
-				var depRes deployment
+				var depRes ApiDeploymentResponse
 				body, err := ioutil.ReadAll(res.Body)
 				Expect(err).ShouldNot(HaveOccurred())
 				json.Unmarshal(body, &depRes)
 
-				Expect(depRes.DeploymentID).Should(Equal(deploymentID))
+				Expect(len(depRes)).To(Equal(2))
 
-				for _, bundle := range depRes.Bundles {
-					uri, err := url.Parse(bundle.URI)
-					Expect(err).ShouldNot(HaveOccurred())
-					bContent, err := ioutil.ReadFile(uri.Path)
-					Expect(err).ShouldNot(HaveOccurred())
-					content := string(bContent)
-					Expect(content).Should(HavePrefix("/bundle/"))
-				}
+				dep := depRes[1]
+
+				Expect(dep.ID).To(Equal(deploymentID))
+				Expect(dep.ScopeId).To(Equal(deploymentID))
+				Expect(dep.DisplayName).To(Equal(deploymentID))
 
 				close(done)
 			}()
 
-			time.Sleep(25 * time.Millisecond) // give api call above time to block
-			triggerDeploymentEvent(deploymentID)
+			time.Sleep(250 * time.Millisecond) // give api call above time to block
+			insertTestDeployment(testServer, deploymentID)
+			deploymentsChanged<- deploymentID
 		})
 
 		It("should get 304 after blocking if no new deployment", func() {
@@ -148,7 +157,7 @@ var _ = Describe("api", func() {
 			deploymentID := "api_no_change_blocking"
 			insertTestDeployment(testServer, deploymentID)
 			uri, err := url.Parse(testServer.URL)
-			uri.Path = "/deployments/current"
+			uri.Path = deploymentsEndpoint
 			res, err := http.Get(uri.String())
 			Expect(err).ShouldNot(HaveOccurred())
 			defer res.Body.Close()
@@ -167,19 +176,17 @@ var _ = Describe("api", func() {
 		})
 	})
 
-	Context("POST /deployments/{ID}", func() {
+	Context("POST /deployments", func() {
 
-		It("should return a 404 for missing deployment", func() {
-
-			deploymentID := "api_missing_deployment"
+		It("should return BadRequest for invalid request", func() {
 
 			uri, err := url.Parse(testServer.URL)
-			uri.Path = fmt.Sprintf("/deployments/%s", deploymentID)
+			uri.Path = deploymentsEndpoint
 
-			deploymentResult := deploymentResponse{
-				Status: RESPONSE_STATUS_SUCCESS,
+			deploymentResult := apiDeploymentResults{
+				apiDeploymentResult{
+				},
 			}
-
 			payload, err := json.Marshal(deploymentResult)
 			Expect(err).ShouldNot(HaveOccurred())
 
@@ -189,22 +196,49 @@ var _ = Describe("api", func() {
 			resp, err := http.DefaultClient.Do(req)
 			defer resp.Body.Close()
 			Expect(err).ShouldNot(HaveOccurred())
-			Expect(resp.StatusCode).Should(Equal(http.StatusNotFound))
+			Expect(resp.StatusCode).Should(Equal(http.StatusBadRequest))
 		})
 
-		It("should mark a deployment as deployed", func() {
+		It("should ignore deployments that can't be found", func() {
+
+			deploymentID := "api_missing_deployment"
+
+			uri, err := url.Parse(testServer.URL)
+			uri.Path = deploymentsEndpoint
+
+			deploymentResult := apiDeploymentResults{
+				apiDeploymentResult{
+					ID: deploymentID,
+					Status: RESPONSE_STATUS_SUCCESS,
+				},
+			}
+			payload, err := json.Marshal(deploymentResult)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			req, err := http.NewRequest("POST", uri.String(), bytes.NewReader(payload))
+			req.Header.Add("Content-Type", "application/json")
+
+			resp, err := http.DefaultClient.Do(req)
+			defer resp.Body.Close()
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(resp.StatusCode).Should(Equal(http.StatusOK))
+		})
+
+		It("should mark a deployment as successful", func() {
 
 			db := getDB()
 			deploymentID := "api_mark_deployed"
 			insertTestDeployment(testServer, deploymentID)
 
 			uri, err := url.Parse(testServer.URL)
-			uri.Path = fmt.Sprintf("/deployments/%s", deploymentID)
+			uri.Path = deploymentsEndpoint
 
-			deploymentResult := deploymentResponse{
-				Status: RESPONSE_STATUS_SUCCESS,
+			deploymentResult := apiDeploymentResults{
+				apiDeploymentResult{
+					ID: deploymentID,
+					Status: RESPONSE_STATUS_SUCCESS,
+				},
 			}
-
 			payload, err := json.Marshal(deploymentResult)
 			Expect(err).ShouldNot(HaveOccurred())
 
@@ -216,44 +250,29 @@ var _ = Describe("api", func() {
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(resp.StatusCode).Should(Equal(http.StatusOK))
 
-			var deployStatus int
-			err = db.QueryRow("SELECT status FROM gateway_deploy_deployment WHERE id=?", deploymentID).
+			var deployStatus string
+			err = db.QueryRow("SELECT deploy_status FROM deployments WHERE id=?", deploymentID).
 				Scan(&deployStatus)
-			Expect(deployStatus).Should(Equal(DEPLOYMENT_STATE_SUCCESS))
-
-			rows, err := db.Query("SELECT status from gateway_deploy_bundle WHERE id = ?;", deploymentID)
-			Expect(err).ShouldNot(HaveOccurred())
-			defer rows.Close()
-			for rows.Next() {
-				rows.Scan(&deployStatus)
-				Expect(deployStatus).Should(Equal(DEPLOYMENT_STATE_SUCCESS))
-			}
+			Expect(deployStatus).Should(Equal(RESPONSE_STATUS_SUCCESS))
 		})
 
 		It("should mark a deployment as failed", func() {
 
 			db := getDB()
-			deploymentID := "api_test_3"
+			deploymentID := "api_mark_failed"
 			insertTestDeployment(testServer, deploymentID)
 
 			uri, err := url.Parse(testServer.URL)
-			uri.Path = fmt.Sprintf("/deployments/%s", deploymentID)
+			uri.Path = deploymentsEndpoint
 
-			deploymentResult := deploymentResponse{
-				Status: RESPONSE_STATUS_FAIL,
-				Error: deploymentErrorResponse{
+			deploymentResult := apiDeploymentResults{
+				apiDeploymentResult{
+					ID: deploymentID,
+					Status: RESPONSE_STATUS_FAIL,
 					ErrorCode: 100,
-					Reason: "bad juju",
-					//ErrorDetails: []deploymentErrorDetail{ // todo: add tests for bundle errors
-					//	{
-					//		BundleId: "",
-					//		ErrorCode: 100,
-					//		Reason: "Zombies",
-					//	},
-					//},
+					Message: "Some error message",
 				},
 			}
-
 			payload, err := json.Marshal(deploymentResult)
 			Expect(err).ShouldNot(HaveOccurred())
 
@@ -265,41 +284,60 @@ var _ = Describe("api", func() {
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(resp.StatusCode).Should(Equal(http.StatusOK))
 
-			var deployStatus int
-			err = db.QueryRow("SELECT status from gateway_deploy_deployment WHERE id = ?;",
-				deploymentID).Scan(&deployStatus)
-			Expect(err).ShouldNot(HaveOccurred())
-			Expect(deployStatus).Should(Equal(DEPLOYMENT_STATE_ERR_GWY))
+			var deployStatus, deploy_error_message string
+			var deploy_error_code int
+			err = db.QueryRow(`
+			SELECT deploy_status, deploy_error_code, deploy_error_message
+			FROM deployments
+			WHERE id=?`, deploymentID).Scan(&deployStatus, &deploy_error_code, &deploy_error_message)
+			Expect(deployStatus).Should(Equal(RESPONSE_STATUS_FAIL))
+			Expect(deploy_error_code).Should(Equal(100))
+			Expect(deploy_error_message).Should(Equal("Some error message"))
 		})
 	})
 })
 
-func insertTestDeployment(server *httptest.Server, depID string) {
+func insertTestDeployment(testServer *httptest.Server, deploymentID string) {
 
-	db := getDB()
-	uri, err := url.Parse(server.URL)
+	uri, err := url.Parse(testServer.URL)
 	Expect(err).ShouldNot(HaveOccurred())
-	uri.Path = "/bundle"
-	bundleUri := uri.String()
 
-	dep := deployment{
-		System: bundle{
-			URI: bundleUri,
-		},
-		Bundles: []bundle{
-			{
-				BundleID: "bun",
-				URI: bundleUri,
-				Scope: "some-scope",
-				Org: "org",
-				Env: "env",
-			},
-		},
+	uri.Path = "/bundles/1"
+	bundleUri := uri.String()
+	bundle := bundleConfigJson{
+		Name: uri.Path,
+		URI: bundleUri,
+		ChecksumType: "crc-32",
+	}
+	bundle.Checksum = testGetChecksum(bundle.ChecksumType, bundleUri)
+	bundleJson, err := json.Marshal(bundle)
+	Expect(err).ShouldNot(HaveOccurred())
+
+	tx, err := getDB().Begin()
+	Expect(err).ShouldNot(HaveOccurred())
+
+	dep := DataDeployment{
+		ID: deploymentID,
+		BundleConfigID: deploymentID,
+		ApidClusterID: deploymentID,
+		DataScopeID: deploymentID,
+		BundleConfigJSON: string(bundleJson),
+		ConfigJSON: string(bundleJson),
+		Status: "",
+		Created: "",
+		CreatedBy: "",
+		Updated: "",
+		UpdatedBy: "",
+		BundleName: deploymentID,
+		BundleURI: "",
+		BundleChecksum: "",
+		BundleChecksumType: "",
+		LocalBundleURI: "x",
 	}
 
-	err = insertDeployment(db, depID, dep)
+	err = InsertDeployment(tx, dep)
 	Expect(err).ShouldNot(HaveOccurred())
 
-	err = updateDeploymentStatus(db, depID, DEPLOYMENT_STATE_READY, 0)
+	err = tx.Commit()
 	Expect(err).ShouldNot(HaveOccurred())
 }

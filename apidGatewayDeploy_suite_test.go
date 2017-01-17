@@ -9,9 +9,11 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
+	"net/url"
+	"encoding/hex"
+	"os"
 )
 
 var (
@@ -34,21 +36,22 @@ var _ = BeforeSuite(func() {
 
 	db, err := data.DB()
 	Expect(err).NotTo(HaveOccurred())
-	initDB(db)
-	setDB(db)
+	err = InitDB(db)
+	Expect(err).NotTo(HaveOccurred())
+	SetDB(db)
 
 	router := apid.API().Router()
 	// fake an unreliable bundle repo
-	downloadMultiplier = 10 * time.Millisecond
+	backOffMultiplier = 10 * time.Millisecond
 	count := 0
-	router.HandleFunc("/bundle/{id}", func(w http.ResponseWriter, req *http.Request) {
+	router.HandleFunc("/bundles/{id}", func(w http.ResponseWriter, req *http.Request) {
 		count++
 		if count % 2 == 0 {
 			w.WriteHeader(500)
 			return
 		}
 		vars := apid.API().Vars(req)
-		w.Write([]byte("/bundle/" + vars["id"]))
+		w.Write([]byte("/bundles/" + vars["id"]))
 	})
 	testServer = httptest.NewServer(router)
 })
@@ -64,4 +67,15 @@ var _ = AfterSuite(func() {
 func TestApidGatewayDeploy(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "ApidGatewayDeploy Suite")
+}
+
+func testGetChecksum(hashType, uri string) string {
+	url, err := url.Parse(uri)
+	Expect(err).NotTo(HaveOccurred())
+
+	hashWriter, err := getHashWriter(hashType)
+	Expect(err).NotTo(HaveOccurred())
+
+	hashWriter.Write([]byte(url.Path))
+	return hex.EncodeToString(hashWriter.Sum(nil))
 }
