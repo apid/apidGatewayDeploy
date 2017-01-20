@@ -109,6 +109,7 @@ var _ = Describe("api", func() {
 			res, err := http.Get(uri.String())
 			Expect(err).ShouldNot(HaveOccurred())
 			defer res.Body.Close()
+			eTag := res.Header.Get("etag")
 
 			deploymentID = "api_get_current_blocking2"
 			go func() {
@@ -119,7 +120,7 @@ var _ = Describe("api", func() {
 				uri.RawQuery = query.Encode()
 				req, err := http.NewRequest("GET", uri.String(), nil)
 				req.Header.Add("Content-Type", "application/json")
-				req.Header.Add("If-None-Match", res.Header.Get("etag"))
+				req.Header.Add("If-None-Match", eTag)
 
 				res, err := http.DefaultClient.Do(req)
 				Expect(err).ShouldNot(HaveOccurred())
@@ -318,16 +319,18 @@ func insertTestDeployment(testServer *httptest.Server, deploymentID string) {
 		DataScopeID: deploymentID,
 		BundleConfigJSON: string(bundleJson),
 		ConfigJSON: string(bundleJson),
-		Status: "",
 		Created: "",
 		CreatedBy: "",
 		Updated: "",
 		UpdatedBy: "",
 		BundleName: deploymentID,
-		BundleURI: "",
-		BundleChecksum: "",
-		BundleChecksumType: "",
+		BundleURI: bundle.URI,
+		BundleChecksum: bundle.Checksum,
+		BundleChecksumType: bundle.ChecksumType,
 		LocalBundleURI: "x",
+		DeployStatus: "",
+		DeployErrorCode: 0,
+		DeployErrorMessage: "",
 	}
 
 	err = InsertDeployment(tx, dep)

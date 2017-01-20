@@ -25,25 +25,49 @@ var (
 	backOffMultiplier = 10 * time.Second
 )
 
-func downloadBundle(dep DataDeployment) error {
+func downloadBundle(dep DataDeployment) {
 
 	log.Debugf("starting bundle download process: %s", dep.BundleURI)
 
 	hashWriter, err := getHashWriter(dep.BundleChecksumType)
 	if err != nil {
-		log.Errorf("invalid checksum type: %v", err)
-		return err
+		msg := fmt.Sprintf("invalid bundle checksum type: %v", dep.BundleChecksumType)
+		log.Error(msg)
+		setDeploymentResults(apiDeploymentResults{
+			{
+				ID:        dep.ID,
+				Status:    RESPONSE_STATUS_FAIL,
+				ErrorCode: ERROR_CODE_TODO,
+				Message:   msg,
+			},
+		})
+		return
 	}
 
-	// retry
-	var tempFile string
+	// todo: do forever with backoff - note: we'll want to abort if deployment is deleted, however
+	// todo: also, we'll still mark deployment result as "failed" - after some timeout
 	for i := 1; i <= DOWNLOAD_ATTEMPTS; i++ {
+		var tempFile, bundleFile string
 		tempFile, err = downloadFromURI(dep.BundleURI, hashWriter, dep.BundleChecksum)
+
+		if err == nil {
+			bundleFile = getBundleFile(dep)
+			err = os.Rename(tempFile, bundleFile)
+			if err != nil {
+				log.Errorf("Unable to rename temp bundle file %s to %s: %s", tempFile, bundleFile, err)
+			}
+		}
+
+		if tempFile != "" {
+			go safeDelete(tempFile)
+		}
+
+		if err == nil {
+			err = updateLocalBundleURI(dep.ID, bundleFile)
+		}
+
 		if err == nil {
 			break
-		}
-		if tempFile != "" {
-			os.Remove(tempFile)
 		}
 
 		// simple back-off, we could potentially be more sophisticated
@@ -52,29 +76,24 @@ func downloadBundle(dep DataDeployment) error {
 		time.Sleep(retryIn)
 		hashWriter.Reset()
 	}
-
 	if err != nil {
 		log.Errorf("failed %d download attempts. aborting.", DOWNLOAD_ATTEMPTS)
-		return err
 	}
 
-	bundleFile := getBundleFile(dep)
-	err = os.Rename(tempFile, bundleFile)
 	if err != nil {
-		log.Errorf("Unable to rename temp bundle file %s to %s: %s", tempFile, bundleFile, err)
-		os.Remove(tempFile)
-		return err
-	}
-
-	err = updateLocalURI(dep.ID, bundleFile)
-	if err != nil {
-		return err
+		setDeploymentResults(apiDeploymentResults{
+			{
+				ID:        dep.ID,
+				Status:    RESPONSE_STATUS_FAIL,
+				ErrorCode: ERROR_CODE_TODO,
+				Message:   fmt.Sprintf("bundle download failed: %s", err),
+			},
+		})
+		return
 	}
 
 	// send deployments to client
 	deploymentsChanged<- dep.ID
-
-	return nil
 }
 
 func getBundleFile(dep DataDeployment) string {

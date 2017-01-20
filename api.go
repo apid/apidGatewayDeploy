@@ -87,9 +87,9 @@ func distributeEvents() {
 		case msg := <-deploymentsChanged:
 			// todo: add a debounce w/ timeout to avoid sending on every single deployment?
 			subs := subscribers
-			incrementETag() // todo: do this elsewhere? check error?
-			subscribers = make(map[chan string]struct{})
 			log.Debugf("Delivering deployment change %s to %d subscribers", msg, len(subs))
+			subscribers = make(map[chan string]struct{})
+			incrementETag()
 			for subscriber := range subs {
 				select {
 				case subscriber <- msg:

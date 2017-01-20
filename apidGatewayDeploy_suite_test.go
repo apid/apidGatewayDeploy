@@ -43,14 +43,14 @@ var _ = BeforeSuite(func() {
 	router := apid.API().Router()
 	// fake an unreliable bundle repo
 	backOffMultiplier = 10 * time.Millisecond
-	count := 0
+	count := 1
 	router.HandleFunc("/bundles/{id}", func(w http.ResponseWriter, req *http.Request) {
 		count++
-		if count % 2 == 0 {
+		vars := apid.API().Vars(req)
+		if count % 2 == 0 || vars["id"] == "alwaysfail" {
 			w.WriteHeader(500)
 			return
 		}
-		vars := apid.API().Vars(req)
 		w.Write([]byte("/bundles/" + vars["id"]))
 	})
 	testServer = httptest.NewServer(router)
