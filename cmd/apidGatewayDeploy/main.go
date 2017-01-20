@@ -103,7 +103,6 @@ func insertTestDeployments(deployments apiGatewayDeploy.ApiDeploymentResponse) e
 			DataScopeID:        ad.ScopeId,
 			BundleConfigJSON:   string(ad.BundleConfigJson),
 			ConfigJSON:         string(ad.ConfigJson),
-			Status:             "",
 			Created:            "",
 			CreatedBy:          "",
 			Updated:            "",
