@@ -64,6 +64,12 @@ var _ = AfterSuite(func() {
 	os.RemoveAll(tmpDir)
 })
 
+var _ = BeforeEach(func() {
+	_, err := getDB().Exec("DELETE FROM deployments")
+	Expect(err).ShouldNot(HaveOccurred())
+	_, err = getDB().Exec("UPDATE etag SET value=1")
+})
+
 func TestApidGatewayDeploy(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "ApidGatewayDeploy Suite")

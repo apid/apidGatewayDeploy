@@ -14,11 +14,6 @@ import (
 
 var _ = Describe("api", func() {
 
-	BeforeEach(func() {
-		_, err := getDB().Exec("DELETE FROM deployments")
-		Expect(err).ShouldNot(HaveOccurred())
-	})
-
 	Context("GET /deployments", func() {
 
 		It("should get an empty array if no deployments", func() {
