@@ -40,6 +40,8 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	SetDB(db)
 
+	debounceDuration = 1 * time.Millisecond
+
 	router := apid.API().Router()
 	// fake an unreliable bundle repo
 	backOffMultiplier = 10 * time.Millisecond

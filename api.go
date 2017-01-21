@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+	"sync"
 )
 
 const (
@@ -82,25 +83,44 @@ func writeDatabaseError(w http.ResponseWriter) {
 
 func distributeEvents() {
 	subscribers := make(map[chan string]struct{})
-	for {
+	mut := sync.Mutex{}
+	msg := ""
+	debouncer := func() {
 		select {
-		case msg := <-deploymentsChanged:
-			// todo: add a debounce w/ timeout to avoid sending on every single deployment?
+		case <-time.After(debounceDuration):
+			mut.Lock()
 			subs := subscribers
-			log.Debugf("Delivering deployment change %s to %d subscribers", msg, len(subs))
 			subscribers = make(map[chan string]struct{})
+			m := msg
+			msg = ""
+			mut.Unlock()
+			log.Debugf("Delivering deployment change %s to %d subscribers", m, len(subs))
 			incrementETag()
 			for subscriber := range subs {
 				select {
-				case subscriber <- msg:
-					log.Debugf("Handling deploy response for: %s", msg)
+				case subscriber <- m:
+					log.Debugf("Handling deploy response for: %s", m)
 				default:
 					log.Debugf("listener too far behind, message dropped")
 				}
 			}
+		}
+	}
+	for {
+		select {
+		case newMsg := <-deploymentsChanged:
+			mut.Lock()
+			log.Debug("deploymentsChanged")
+			if msg == "" {
+				go debouncer()
+			}
+			msg = newMsg
+			mut.Unlock()
 		case subscriber := <-addSubscriber:
 			log.Debugf("Add subscriber: %v", subscriber)
+			mut.Lock()
 			subscribers[subscriber] = struct{}{}
+			mut.Unlock()
 		}
 	}
 }

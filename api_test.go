@@ -27,6 +27,17 @@ var _ = Describe("api", func() {
 			Expect(res.StatusCode).Should(Equal(http.StatusNotFound))
 		})
 
+		It("should debounce requests", func() {
+			var listener = make(chan string)
+			addSubscriber <- listener
+
+			deploymentsChanged <- "x"
+			deploymentsChanged <- "y"
+
+			id := <-listener
+			Expect(id).To(Equal("y"))
+		})
+
 		It("should get current deployments", func() {
 
 			deploymentID := "api_get_current"
@@ -97,7 +108,6 @@ var _ = Describe("api", func() {
 			defer res.Body.Close()
 
 			Expect(res.StatusCode).Should(Equal(http.StatusOK))
-
 		})
 
 		It("should get new deployment after blocking", func(done Done) {

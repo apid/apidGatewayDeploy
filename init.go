@@ -4,10 +4,12 @@ import (
 	"github.com/30x/apid"
 	"os"
 	"path"
+	"time"
 )
 
 const (
-	configBundleDirKey = "gatewaydeploy_bundle_dir"
+	configBundleDirKey     = "gatewaydeploy_bundle_dir"
+	configDebounceDuration = "gatewaydeploy_debounce_duration"
 )
 
 var (
@@ -15,6 +17,7 @@ var (
 	log        apid.LogService
 	data       apid.DataService
 	bundlePath string
+	debounceDuration time.Duration
 )
 
 func init() {
@@ -28,6 +31,12 @@ func initPlugin(s apid.Services) (apid.PluginData, error) {
 
 	config := services.Config()
 	config.SetDefault(configBundleDirKey, "bundles")
+	config.SetDefault(configDebounceDuration, 1 * time.Second)
+
+	debounceDuration = config.GetDuration(configDebounceDuration)
+	if debounceDuration < 1 * time.Millisecond {
+		log.Panicf("%s must be a positive duration", configDebounceDuration)
+	}
 
 	data = services.Data()
 
