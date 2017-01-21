@@ -65,7 +65,6 @@ func InitDB(db apid.DB) error {
 		PRIMARY KEY (id)
 	);
 	`)
-	// todo: is ID enough? must it be scoped by cluster id?
 	if err != nil {
 		return err
 	}

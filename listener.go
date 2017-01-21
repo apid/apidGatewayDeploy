@@ -6,6 +6,7 @@ import (
 	"github.com/30x/apid"
 	"github.com/apigee-labs/transicator/common"
 	"os"
+	"time"
 )
 
 const (
@@ -141,8 +142,7 @@ func processChangeList(changes *common.ChangeList) {
 		log.Debugf("will delete %d old bundles", len(bundlesToDelete))
 		go func() {
 			// give clients a minute to avoid conflicts
-			// todo: configurable time
-			//time.Sleep(1 * time.Minute)
+			time.Sleep(bundleCleanupDelay)
 			for _, b := range bundlesToDelete {
 				log.Debugf("removing old bundle: %v", b)
 				safeDelete(b)

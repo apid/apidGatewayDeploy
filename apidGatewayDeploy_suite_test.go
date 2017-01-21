@@ -40,11 +40,12 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	SetDB(db)
 
-	debounceDuration = 1 * time.Millisecond
+	debounceDuration = time.Millisecond
+	bundleCleanupDelay = time.Millisecond
 
 	router := apid.API().Router()
 	// fake an unreliable bundle repo
-	backOffMultiplier = 10 * time.Millisecond
+	backOffMultiplier = time.Millisecond
 	count := 1
 	router.HandleFunc("/bundles/{id}", func(w http.ResponseWriter, req *http.Request) {
 		count++

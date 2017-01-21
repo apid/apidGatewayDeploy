@@ -1,14 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"github.com/30x/apid"
 	"github.com/30x/apid/factory"
+	"github.com/30x/apidGatewayDeploy"
 	_ "github.com/30x/apidGatewayDeploy"
 	"io/ioutil"
-	"github.com/30x/apidGatewayDeploy"
 	"os"
-	"encoding/json"
 )
 
 func main() {
@@ -33,7 +33,6 @@ func main() {
 		defer os.RemoveAll(tmpDir)
 
 		configService.Set("data_path", tmpDir)
-		configService.Set("gatewaydeploy_bundle_dir", tmpDir) // todo: legacy?
 
 		if deploymentsFile != "" {
 			bytes, err := ioutil.ReadFile(deploymentsFile)
@@ -113,7 +112,6 @@ func insertTestDeployments(deployments apiGatewayDeploy.ApiDeploymentResponse) e
 			BundleChecksumType: "",
 			LocalBundleURI:     ad.URI,
 		}
-
 
 		err = apiGatewayDeploy.InsertDeployment(tx, dep)
 		if err != nil {
