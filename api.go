@@ -248,35 +248,40 @@ func apiSetDeploymentResults(w http.ResponseWriter, r *http.Request) {
 	// validate the results
 	// todo: these errors to the client should be standardized
 	var errs bytes.Buffer
-	for i, rsp := range results {
-		if rsp.ID == "" {
+	var validResults apiDeploymentResults
+	for i, result := range results {
+		valid := true
+		if result.ID == "" {
 			errs.WriteString(fmt.Sprintf("Missing id at %d\n", i))
 		}
 
-		if rsp.Status != RESPONSE_STATUS_SUCCESS && rsp.Status != RESPONSE_STATUS_FAIL {
-			errs.WriteString(fmt.Sprintf("status must be '%s' or '%s' at %d\n", RESPONSE_STATUS_SUCCESS, RESPONSE_STATUS_FAIL, i))
+		if result.Status != RESPONSE_STATUS_SUCCESS && result.Status != RESPONSE_STATUS_FAIL {
+			errs.WriteString(fmt.Sprintf("status must be '%s' or '%s' at %d\n",
+				RESPONSE_STATUS_SUCCESS, RESPONSE_STATUS_FAIL, i))
 		}
 
-		if rsp.Status == RESPONSE_STATUS_FAIL {
-			if rsp.ErrorCode == 0 {
+		if result.Status == RESPONSE_STATUS_FAIL {
+			if result.ErrorCode == 0 {
 				errs.WriteString(fmt.Sprintf("errorCode is required for status == fail at %d\n", i))
 			}
-			if rsp.Message == "" {
+			if result.Message == "" {
 				errs.WriteString(fmt.Sprintf("message are required for status == fail at %d\n", i))
 			}
 		}
+
+		if valid {
+			validResults = append(validResults, result)
+		}
 	}
+
 	if errs.Len() > 0 {
 		writeError(w, http.StatusBadRequest, ERROR_CODE_TODO, errs.String())
+		return
 	}
 
-	err = setDeploymentResults(results)
-	if err != nil {
-		writeDatabaseError(w)
-	}
+	w.Write([]byte("OK"))
 
-	// todo: transmit to server (API TBD)
-	//err = transmitDeploymentResultsToServer()
+	setDeploymentResults(validResults)
 
-	return
+	//go transmitDeploymentResultsToServer(validResults)
 }
