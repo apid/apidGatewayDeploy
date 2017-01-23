@@ -56,12 +56,18 @@ func downloadBundle(dep DataDeployment) {
 	go func() {
 		<- timeout.C
 		log.Debugf("bundle download timeout. marking deployment %s failed. will keep retrying: %s", dep.ID, dep.BundleURI)
+		var errMessage string
+		if err != nil {
+			errMessage = fmt.Sprintf("bundle download failed: %s", err)
+		} else {
+			errMessage = "bundle download failed"
+		}
 		setDeploymentResults(apiDeploymentResults{
 			{
 				ID:        dep.ID,
 				Status:    RESPONSE_STATUS_FAIL,
 				ErrorCode: ERROR_CODE_TODO,
-				Message:   fmt.Sprintf("bundle download failed: %s", err),
+				Message:   errMessage,
 			},
 		})
 	}()

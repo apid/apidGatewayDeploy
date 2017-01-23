@@ -60,18 +60,6 @@ var _ = BeforeSuite(func() {
 		}
 		w.Write([]byte("/bundles/" + vars["id"]))
 	})
-	router.HandleFunc("/bundles/{id}", func(w http.ResponseWriter, req *http.Request) {
-		count++
-		vars := apid.API().Vars(req)
-		if count % 2 == 0 {
-			w.WriteHeader(500)
-			return
-		}
-		if vars["id"] == "longfail" {
-			time.Sleep(bundleDownloadTimeout + (250 * time.Millisecond))
-		}
-		w.Write([]byte("/bundles/" + vars["id"]))
-	})
 	testServer = httptest.NewServer(router)
 })
 
