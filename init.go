@@ -8,9 +8,10 @@ import (
 )
 
 const (
-	configBundleDirKey       = "gatewaydeploy_bundle_dir"
-	configDebounceDuration   = "gatewaydeploy_debounce_duration"
-	configBundleCleanupDelay = "gatewaydeploy_bundle_cleanup_delay"
+	configBundleDirKey          = "gatewaydeploy_bundle_dir"
+	configDebounceDuration      = "gatewaydeploy_debounce_duration"
+	configBundleCleanupDelay    = "gatewaydeploy_bundle_cleanup_delay"
+	configBundleDownloadTimeout = "gatewaydeploy_bundle_download_timeout"
 )
 
 var (
@@ -35,6 +36,7 @@ func initPlugin(s apid.Services) (apid.PluginData, error) {
 	config.SetDefault(configBundleDirKey, "bundles")
 	config.SetDefault(configDebounceDuration, time.Second)
 	config.SetDefault(configBundleCleanupDelay, time.Minute)
+	config.SetDefault(configBundleDownloadTimeout, 5 * time.Minute)
 
 	debounceDuration = config.GetDuration(configDebounceDuration)
 	if debounceDuration < time.Millisecond {
@@ -44,6 +46,11 @@ func initPlugin(s apid.Services) (apid.PluginData, error) {
 	bundleCleanupDelay = config.GetDuration(configBundleCleanupDelay)
 	if bundleCleanupDelay < time.Millisecond {
 		log.Panicf("%s must be a positive duration", configBundleCleanupDelay)
+	}
+
+	bundleDownloadTimeout = config.GetDuration(configBundleDownloadTimeout)
+	if bundleDownloadTimeout < time.Millisecond {
+		log.Panicf("%s must be a positive duration", configBundleDownloadTimeout)
 	}
 
 	data = services.Data()

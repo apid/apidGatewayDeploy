@@ -17,17 +17,12 @@ import (
 	"encoding/hex"
 )
 
-const (
-	DOWNLOAD_ATTEMPTS = 3
-)
-
-var (
-	backOffMultiplier = 10 * time.Second
-)
+var bundleRetryDelay time.Duration = time.Second
+var bundleDownloadTimeout time.Duration = 10 * time.Minute
 
 func downloadBundle(dep DataDeployment) {
 
-	log.Debugf("starting bundle download process: %s", dep.BundleURI)
+	log.Debugf("starting bundle download process for %s: %s", dep.ID, dep.BundleURI)
 
 	hashWriter, err := getHashWriter(dep.BundleChecksumType)
 	if err != nil {
@@ -44,9 +39,35 @@ func downloadBundle(dep DataDeployment) {
 		return
 	}
 
-	// todo: do forever with backoff - note: we'll want to abort if deployment is deleted, however
-	// todo: also, we'll still mark deployment result as "failed" - after some timeout
-	for i := 1; i <= DOWNLOAD_ATTEMPTS; i++ {
+	// simple doubling back-off
+	retryIn := bundleRetryDelay
+	maxBackOff := 5 * time.Minute
+	backOff := func() {
+		log.Debugf("will retry failed download in %s: %v", retryIn, err)
+		time.Sleep(retryIn)
+		retryIn = retryIn * time.Duration(2)
+		if retryIn > maxBackOff {
+			retryIn = maxBackOff
+		}
+	}
+
+	// timeout and mark deployment failed
+	timeout := time.NewTimer(bundleDownloadTimeout)
+	go func() {
+		<- timeout.C
+		log.Debugf("bundle download timeout. marking deployment %s failed. will keep retrying: %s", dep.ID, dep.BundleURI)
+		setDeploymentResults(apiDeploymentResults{
+			{
+				ID:        dep.ID,
+				Status:    RESPONSE_STATUS_FAIL,
+				ErrorCode: ERROR_CODE_TODO,
+				Message:   fmt.Sprintf("bundle download failed: %s", err),
+			},
+		})
+	}()
+
+	// todo: we'll want to abort download if deployment is deleted
+	for {
 		var tempFile, bundleFile string
 		tempFile, err = downloadFromURI(dep.BundleURI, hashWriter, dep.BundleChecksum)
 
@@ -66,31 +87,16 @@ func downloadBundle(dep DataDeployment) {
 			err = updateLocalBundleURI(dep.ID, bundleFile)
 		}
 
+		// success!
 		if err == nil {
 			break
 		}
 
-		// simple back-off, we could potentially be more sophisticated
-		retryIn := time.Duration(i) * backOffMultiplier
-		log.Debugf("will retry failed download in %s: %v", retryIn, err)
-		time.Sleep(retryIn)
+		backOff()
 		hashWriter.Reset()
 	}
-	if err != nil {
-		log.Errorf("failed %d download attempts. aborting.", DOWNLOAD_ATTEMPTS)
-	}
 
-	if err != nil {
-		setDeploymentResults(apiDeploymentResults{
-			{
-				ID:        dep.ID,
-				Status:    RESPONSE_STATUS_FAIL,
-				ErrorCode: ERROR_CODE_TODO,
-				Message:   fmt.Sprintf("bundle download failed: %s", err),
-			},
-		})
-		return
-	}
+	log.Debugf("bundle for %s downloaded: %s", dep.ID, dep.BundleURI)
 
 	// send deployments to client
 	deploymentsChanged<- dep.ID

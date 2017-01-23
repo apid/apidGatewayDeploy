@@ -42,17 +42,21 @@ var _ = BeforeSuite(func() {
 
 	debounceDuration = time.Millisecond
 	bundleCleanupDelay = time.Millisecond
+	bundleRetryDelay = 10 * time.Millisecond
+	bundleDownloadTimeout = 50 * time.Millisecond
 
 	router := apid.API().Router()
 	// fake an unreliable bundle repo
-	backOffMultiplier = time.Millisecond
 	count := 1
 	router.HandleFunc("/bundles/{id}", func(w http.ResponseWriter, req *http.Request) {
 		count++
 		vars := apid.API().Vars(req)
-		if count % 2 == 0 || vars["id"] == "alwaysfail" {
+		if count % 2 == 0 {
 			w.WriteHeader(500)
 			return
+		}
+		if vars["id"] == "longfail" {
+			time.Sleep(bundleDownloadTimeout + (250 * time.Millisecond))
 		}
 		w.Write([]byte("/bundles/" + vars["id"]))
 	})
