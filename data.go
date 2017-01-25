@@ -80,13 +80,12 @@ func getDB() apid.DB {
 	return db
 }
 
+// caller is responsible for calling dbMux.Lock() and dbMux.Unlock()
 func SetDB(db apid.DB) {
-	dbMux.Lock()
 	if unsafeDB == nil { // init API when DB is initialized
 		go InitAPI()
 	}
 	unsafeDB = db
-	dbMux.Unlock()
 }
 
 // call whenever the list of deployments changes

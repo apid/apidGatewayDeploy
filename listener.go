@@ -62,17 +62,17 @@ func processSnapshot(snapshot *common.Snapshot) {
 		log.Panicf("Error starting transaction: %v", err)
 	}
 
+	// ensure that no new database updates are made on old database
+	dbMux.Lock()
+
 	defer tx.Rollback()
 	for _, table := range snapshot.Tables {
 		var err error
 		switch table.Name {
 		case DEPLOYMENT_TABLE:
 			log.Debugf("Snapshot of %s with %d rows", table.Name, len(table.Rows))
-			if len(table.Rows) == 0 {
-				return
-			}
 			for _, row := range table.Rows {
-				addDeployment(tx, row)
+				err = addDeployment(tx, row)
 			}
 		}
 		if err != nil {
@@ -86,6 +86,7 @@ func processSnapshot(snapshot *common.Snapshot) {
 	}
 
 	SetDB(db)
+	dbMux.Unlock()
 
 	// if no tables, this a startup event for an existing DB, start bundle downloads that didn't finish
 	if len(snapshot.Tables) == 0 {
