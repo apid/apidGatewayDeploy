@@ -182,7 +182,7 @@ var _ = Describe("api", func() {
 		})
 	})
 
-	Context("POST /deployments", func() {
+	Context("PUT /deployments", func() {
 
 		It("should return BadRequest for invalid request", func() {
 
@@ -196,7 +196,7 @@ var _ = Describe("api", func() {
 			payload, err := json.Marshal(deploymentResult)
 			Expect(err).ShouldNot(HaveOccurred())
 
-			req, err := http.NewRequest("POST", uri.String(), bytes.NewReader(payload))
+			req, err := http.NewRequest("PUT", uri.String(), bytes.NewReader(payload))
 			req.Header.Add("Content-Type", "application/json")
 
 			resp, err := http.DefaultClient.Do(req)
@@ -221,7 +221,7 @@ var _ = Describe("api", func() {
 			payload, err := json.Marshal(deploymentResult)
 			Expect(err).ShouldNot(HaveOccurred())
 
-			req, err := http.NewRequest("POST", uri.String(), bytes.NewReader(payload))
+			req, err := http.NewRequest("PUT", uri.String(), bytes.NewReader(payload))
 			req.Header.Add("Content-Type", "application/json")
 
 			resp, err := http.DefaultClient.Do(req)
@@ -248,7 +248,7 @@ var _ = Describe("api", func() {
 			payload, err := json.Marshal(deploymentResult)
 			Expect(err).ShouldNot(HaveOccurred())
 
-			req, err := http.NewRequest("POST", uri.String(), bytes.NewReader(payload))
+			req, err := http.NewRequest("PUT", uri.String(), bytes.NewReader(payload))
 			req.Header.Add("Content-Type", "application/json")
 
 			resp, err := http.DefaultClient.Do(req)
@@ -271,7 +271,7 @@ var _ = Describe("api", func() {
 			uri, err := url.Parse(testServer.URL)
 			uri.Path = deploymentsEndpoint
 
-			deploymentResult := apiDeploymentResults{
+			deploymentResults := apiDeploymentResults{
 				apiDeploymentResult{
 					ID: deploymentID,
 					Status: RESPONSE_STATUS_FAIL,
@@ -279,10 +279,10 @@ var _ = Describe("api", func() {
 					Message: "Some error message",
 				},
 			}
-			payload, err := json.Marshal(deploymentResult)
+			payload, err := json.Marshal(deploymentResults)
 			Expect(err).ShouldNot(HaveOccurred())
 
-			req, err := http.NewRequest("POST", uri.String(), bytes.NewReader(payload))
+			req, err := http.NewRequest("PUT", uri.String(), bytes.NewReader(payload))
 			req.Header.Add("Content-Type", "application/json")
 
 			resp, err := http.DefaultClient.Do(req)
@@ -299,6 +299,29 @@ var _ = Describe("api", func() {
 			Expect(deployStatus).Should(Equal(RESPONSE_STATUS_FAIL))
 			Expect(deploy_error_code).Should(Equal(100))
 			Expect(deploy_error_message).Should(Equal("Some error message"))
+		})
+
+		It("should communicate status to tracking server", func() {
+			deploymentResults := apiDeploymentResults{
+				apiDeploymentResult{
+					ID: "deploymentID",
+					Status: RESPONSE_STATUS_FAIL,
+					ErrorCode: 100,
+					Message: "Some error message",
+				},
+			}
+
+			err := transmitDeploymentResultsToServer(deploymentResults)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(testLastTrackerVars["clusterID"]).To(Equal("CLUSTER_ID"))
+			Expect(testLastTrackerVars["instanceID"]).To(Equal("INSTANCE_ID"))
+			Expect(testLastTrackerBody).ToNot(BeEmpty())
+
+			var uploaded apiDeploymentResults
+			json.Unmarshal(testLastTrackerBody, &uploaded)
+
+			Expect(uploaded).To(Equal(deploymentResults))
 		})
 	})
 })

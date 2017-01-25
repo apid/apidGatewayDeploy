@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 	"sync"
+	"net/url"
 )
 
 const (
@@ -59,7 +60,7 @@ const deploymentsEndpoint = "/deployments"
 
 func InitAPI() {
 	services.API().HandleFunc(deploymentsEndpoint, apiGetCurrentDeployments).Methods("GET")
-	services.API().HandleFunc(deploymentsEndpoint, apiSetDeploymentResults).Methods("POST")
+	services.API().HandleFunc(deploymentsEndpoint, apiSetDeploymentResults).Methods("PUT")
 }
 
 func writeError(w http.ResponseWriter, status int, code int, reason string) {
@@ -279,9 +280,52 @@ func apiSetDeploymentResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(validResults) > 0 {
+		go transmitDeploymentResultsToServer(validResults)
+		setDeploymentResults(validResults)
+	}
+
 	w.Write([]byte("OK"))
+}
 
-	setDeploymentResults(validResults)
+func transmitDeploymentResultsToServer(validResults apiDeploymentResults) error {
 
-	//go transmitDeploymentResultsToServer(validResults)
+	retryIn := bundleRetryDelay
+	maxBackOff := 5 * time.Minute
+	backOffFunc := createBackoff(retryIn, maxBackOff)
+
+	uri, err := url.Parse(apiServerBaseURI.String())
+	if err != nil {
+		log.Errorf("unable to parse apiServerBaseURI %s: %v", apiServerBaseURI.String(), err)
+		return err
+	}
+	uri.Path = fmt.Sprintf("/clusters/%s/apids/%s/deployments", apidClusterID, apidInstanceID)
+
+	resultJSON, err := json.Marshal(validResults)
+	if err != nil {
+		log.Errorf("unable to marshal deployment results %v: %v", validResults, err)
+		return err
+	}
+
+	for {
+		log.Debugf("transmitting deployment results to tracker: %s", string(resultJSON))
+		req, err := http.NewRequest("PUT", uri.String(), bytes.NewReader(resultJSON))
+		req.Header.Add("Content-Type", "application/json")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			if err != nil {
+				log.Errorf("failed to communicate with tracking service: %v", err)
+			} else {
+				b, _ := ioutil.ReadAll(resp.Body)
+				log.Errorf("tracking service call failed. code: %d, body: %s", resp.StatusCode, string(b))
+			}
+			backOffFunc()
+			resp.Body.Close()
+			continue
+		}
+
+		resp.Body.Close()
+		return nil
+	}
 }

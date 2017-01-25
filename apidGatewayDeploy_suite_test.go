@@ -17,8 +17,10 @@ import (
 )
 
 var (
-	tmpDir     string
-	testServer *httptest.Server
+	tmpDir              string
+	testServer          *httptest.Server
+	testLastTrackerVars map[string]string
+	testLastTrackerBody []byte
 )
 
 var _ = BeforeSuite(func() {
@@ -31,6 +33,9 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	config.Set("local_storage_path", tmpDir)
+	config.Set(configApidInstanceID, "INSTANCE_ID")
+	config.Set(configApidClusterID, "CLUSTER_ID")
+	config.Set(configApiServerBaseURI, "http://localhost")
 
 	apid.InitializePlugins()
 
@@ -59,8 +64,29 @@ var _ = BeforeSuite(func() {
 			time.Sleep(bundleDownloadTimeout + (250 * time.Millisecond))
 		}
 		w.Write([]byte("/bundles/" + vars["id"]))
-	})
+
+	}).Methods("GET")
+
+	// fake an unreliable APID tracker
+	router.HandleFunc("/clusters/{clusterID}/apids/{instanceID}/deployments",
+		func(w http.ResponseWriter, req *http.Request) {
+			count++
+			if count % 2 == 0 {
+				w.WriteHeader(500)
+				return
+			}
+
+			testLastTrackerVars = apid.API().Vars(req)
+			testLastTrackerBody, err = ioutil.ReadAll(req.Body)
+			Expect(err).ToNot(HaveOccurred())
+
+			w.Write([]byte("OK"))
+
+	}).Methods("PUT")
 	testServer = httptest.NewServer(router)
+
+	apiServerBaseURI, err = url.Parse(testServer.URL)
+	Expect(err).NotTo(HaveOccurred())
 })
 
 var _ = AfterSuite(func() {

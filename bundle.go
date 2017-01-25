@@ -1,24 +1,36 @@
 package apiGatewayDeploy
 
 import (
+	"crypto/md5"
+	"encoding/base64"
+	"encoding/hex"
+	"errors"
 	"fmt"
+	"hash"
+	"hash/crc32"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
 	"time"
-	"encoding/base64"
-	"io/ioutil"
-	"hash/crc32"
-	"errors"
-	"crypto/md5"
-	"hash"
-	"encoding/hex"
 )
 
 var bundleRetryDelay time.Duration = time.Second
 var bundleDownloadTimeout time.Duration = 10 * time.Minute
+
+// simple doubling back-off
+func createBackoff(retryIn, maxBackOff time.Duration) func() {
+	return func() {
+		log.Debugf("backoff called. will retry in %s.", retryIn)
+		time.Sleep(retryIn)
+		retryIn = retryIn * time.Duration(2)
+		if retryIn > maxBackOff {
+			retryIn = maxBackOff
+		}
+	}
+}
 
 func downloadBundle(dep DataDeployment) {
 
@@ -39,22 +51,14 @@ func downloadBundle(dep DataDeployment) {
 		return
 	}
 
-	// simple doubling back-off
 	retryIn := bundleRetryDelay
 	maxBackOff := 5 * time.Minute
-	backOff := func() {
-		log.Debugf("will retry failed download in %s: %v", retryIn, err)
-		time.Sleep(retryIn)
-		retryIn = retryIn * time.Duration(2)
-		if retryIn > maxBackOff {
-			retryIn = maxBackOff
-		}
-	}
+	backOffFunc := createBackoff(retryIn, maxBackOff)
 
 	// timeout and mark deployment failed
 	timeout := time.NewTimer(bundleDownloadTimeout)
 	go func() {
-		<- timeout.C
+		<-timeout.C
 		log.Debugf("bundle download timeout. marking deployment %s failed. will keep retrying: %s", dep.ID, dep.BundleURI)
 		var errMessage string
 		if err != nil {
@@ -98,14 +102,14 @@ func downloadBundle(dep DataDeployment) {
 			break
 		}
 
-		backOff()
+		backOffFunc()
 		hashWriter.Reset()
 	}
 
 	log.Debugf("bundle for %s downloaded: %s", dep.ID, dep.BundleURI)
 
 	// send deployments to client
-	deploymentsChanged<- dep.ID
+	deploymentsChanged <- dep.ID
 }
 
 func getBundleFile(dep DataDeployment) string {
