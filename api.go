@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -21,6 +24,7 @@ const (
 var (
 	deploymentsChanged = make(chan string)
 	addSubscriber      = make(chan chan string)
+	eTag               int64
 )
 
 type errorResponse struct {
@@ -58,7 +62,7 @@ const deploymentsEndpoint = "/deployments"
 
 func InitAPI() {
 	services.API().HandleFunc(deploymentsEndpoint, apiGetCurrentDeployments).Methods("GET")
-	services.API().HandleFunc(deploymentsEndpoint, apiSetDeploymentResults).Methods("POST")
+	services.API().HandleFunc(deploymentsEndpoint, apiSetDeploymentResults).Methods("PUT")
 }
 
 func writeError(w http.ResponseWriter, status int, code int, reason string) {
@@ -82,25 +86,45 @@ func writeDatabaseError(w http.ResponseWriter) {
 
 func distributeEvents() {
 	subscribers := make(map[chan string]struct{})
-	for {
+	mut := sync.Mutex{}
+	msg := ""
+	debouncer := func() {
 		select {
-		case msg := <-deploymentsChanged:
-			// todo: add a debounce w/ timeout to avoid sending on every single deployment?
+		case <-time.After(debounceDuration):
+			mut.Lock()
 			subs := subscribers
-			incrementETag() // todo: do this elsewhere? check error?
 			subscribers = make(map[chan string]struct{})
-			log.Debugf("Delivering deployment change %s to %d subscribers", msg, len(subs))
+			m := msg
+			msg = ""
+			incrementETag()
+			mut.Unlock()
+			log.Debugf("Delivering deployment change %s to %d subscribers", m, len(subs))
 			for subscriber := range subs {
 				select {
-				case subscriber <- msg:
-					log.Debugf("Handling deploy response for: %s", msg)
+				case subscriber <- m:
+					log.Debugf("Handling deploy response for: %s", m)
+					log.Debugf("delivering TO: %v", subscriber)
 				default:
 					log.Debugf("listener too far behind, message dropped")
 				}
 			}
+		}
+	}
+	for {
+		select {
+		case newMsg := <-deploymentsChanged:
+			mut.Lock()
+			log.Debug("deploymentsChanged")
+			if msg == "" {
+				go debouncer()
+			}
+			msg = newMsg
+			mut.Unlock()
 		case subscriber := <-addSubscriber:
 			log.Debugf("Add subscriber: %v", subscriber)
+			mut.Lock()
 			subscribers[subscriber] = struct{}{}
+			mut.Unlock()
 		}
 	}
 }
@@ -132,11 +156,7 @@ func apiGetCurrentDeployments(w http.ResponseWriter, r *http.Request) {
 	log.Debugf("if-none-match: %s", ifNoneMatch)
 
 	// send unmodified if matches prior eTag and no timeout
-	eTag, err := getETag()
-	if err != nil {
-		writeDatabaseError(w)
-		return
-	}
+	eTag := getETag()
 	if eTag == ifNoneMatch && timeout == 0 {
 		w.WriteHeader(http.StatusNotModified)
 		return
@@ -189,16 +209,16 @@ func sendDeployments(w http.ResponseWriter, dataDeps []DataDeployment, eTag stri
 
 	for _, d := range dataDeps {
 		apiDeps = append(apiDeps, ApiDeployment{
-			ID:                d.ID,
-			ScopeId:           d.DataScopeID,
-			Created:           d.Created,
-			CreatedBy:         d.CreatedBy,
-			Updated:           d.Updated,
-			UpdatedBy:         d.UpdatedBy,
-			BundleConfigJson:  []byte(d.BundleConfigJSON),
-			ConfigJson:        []byte(d.ConfigJSON),
-			DisplayName:       d.BundleName,
-			URI:               d.LocalBundleURI,
+			ID:               d.ID,
+			ScopeId:          d.DataScopeID,
+			Created:          d.Created,
+			CreatedBy:        d.CreatedBy,
+			Updated:          d.Updated,
+			UpdatedBy:        d.UpdatedBy,
+			BundleConfigJson: []byte(d.BundleConfigJSON),
+			ConfigJson:       []byte(d.ConfigJSON),
+			DisplayName:      d.BundleName,
+			URI:              d.LocalBundleURI,
 		})
 	}
 
@@ -228,35 +248,93 @@ func apiSetDeploymentResults(w http.ResponseWriter, r *http.Request) {
 	// validate the results
 	// todo: these errors to the client should be standardized
 	var errs bytes.Buffer
-	for i, rsp := range results {
-		if rsp.ID == "" {
+	var validResults apiDeploymentResults
+	for i, result := range results {
+		valid := true
+		if result.ID == "" {
 			errs.WriteString(fmt.Sprintf("Missing id at %d\n", i))
 		}
 
-		if rsp.Status != RESPONSE_STATUS_SUCCESS && rsp.Status != RESPONSE_STATUS_FAIL {
-			errs.WriteString(fmt.Sprintf("status must be '%s' or '%s' at %d\n", RESPONSE_STATUS_SUCCESS, RESPONSE_STATUS_FAIL, i))
+		if result.Status != RESPONSE_STATUS_SUCCESS && result.Status != RESPONSE_STATUS_FAIL {
+			errs.WriteString(fmt.Sprintf("status must be '%s' or '%s' at %d\n",
+				RESPONSE_STATUS_SUCCESS, RESPONSE_STATUS_FAIL, i))
 		}
 
-		if rsp.Status == RESPONSE_STATUS_FAIL {
-			if rsp.ErrorCode == 0 {
+		if result.Status == RESPONSE_STATUS_FAIL {
+			if result.ErrorCode == 0 {
 				errs.WriteString(fmt.Sprintf("errorCode is required for status == fail at %d\n", i))
 			}
-			if rsp.Message == "" {
+			if result.Message == "" {
 				errs.WriteString(fmt.Sprintf("message are required for status == fail at %d\n", i))
 			}
 		}
+
+		if valid {
+			validResults = append(validResults, result)
+		}
 	}
+
 	if errs.Len() > 0 {
 		writeError(w, http.StatusBadRequest, ERROR_CODE_TODO, errs.String())
+		return
 	}
 
-	err = setDeploymentResults(results)
+	if len(validResults) > 0 {
+		go transmitDeploymentResultsToServer(validResults)
+		setDeploymentResults(validResults)
+	}
+
+	w.Write([]byte("OK"))
+}
+
+func transmitDeploymentResultsToServer(validResults apiDeploymentResults) error {
+
+	retryIn := bundleRetryDelay
+	maxBackOff := 5 * time.Minute
+	backOffFunc := createBackoff(retryIn, maxBackOff)
+
+	uri, err := url.Parse(apiServerBaseURI.String())
 	if err != nil {
-		writeDatabaseError(w)
+		log.Errorf("unable to parse apiServerBaseURI %s: %v", apiServerBaseURI.String(), err)
+		return err
+	}
+	uri.Path = fmt.Sprintf("/clusters/%s/apids/%s/deployments", apidClusterID, apidInstanceID)
+
+	resultJSON, err := json.Marshal(validResults)
+	if err != nil {
+		log.Errorf("unable to marshal deployment results %v: %v", validResults, err)
+		return err
 	}
 
-	// todo: transmit to server (API TBD)
-	//err = transmitDeploymentResultsToServer()
+	for {
+		log.Debugf("transmitting deployment results to tracker: %s", string(resultJSON))
+		req, err := http.NewRequest("PUT", uri.String(), bytes.NewReader(resultJSON))
+		req.Header.Add("Content-Type", "application/json")
 
-	return
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			if err != nil {
+				log.Errorf("failed to communicate with tracking service: %v", err)
+			} else {
+				b, _ := ioutil.ReadAll(resp.Body)
+				log.Errorf("tracking service call failed. code: %d, body: %s", resp.StatusCode, string(b))
+			}
+			backOffFunc()
+			resp.Body.Close()
+			continue
+		}
+
+		resp.Body.Close()
+		return nil
+	}
+}
+
+// call whenever the list of deployments changes
+func incrementETag() {
+	atomic.AddInt64(&eTag, 1)
+}
+
+func getETag() string {
+	e := atomic.LoadInt64(&eTag)
+	return strconv.FormatInt(e, 10)
 }

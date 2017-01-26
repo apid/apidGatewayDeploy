@@ -14,11 +14,6 @@ import (
 
 var _ = Describe("api", func() {
 
-	BeforeEach(func() {
-		_, err := getDB().Exec("DELETE FROM deployments")
-		Expect(err).ShouldNot(HaveOccurred())
-	})
-
 	Context("GET /deployments", func() {
 
 		It("should get an empty array if no deployments", func() {
@@ -30,6 +25,17 @@ var _ = Describe("api", func() {
 			Expect(err).ShouldNot(HaveOccurred())
 			defer res.Body.Close()
 			Expect(res.StatusCode).Should(Equal(http.StatusNotFound))
+		})
+
+		It("should debounce requests", func() {
+			var listener = make(chan string)
+			addSubscriber <- listener
+
+			deploymentsChanged <- "x"
+			deploymentsChanged <- "y"
+
+			id := <-listener
+			Expect(id).To(Equal("y"))
 		})
 
 		It("should get current deployments", func() {
@@ -102,7 +108,6 @@ var _ = Describe("api", func() {
 			defer res.Body.Close()
 
 			Expect(res.StatusCode).Should(Equal(http.StatusOK))
-
 		})
 
 		It("should get new deployment after blocking", func(done Done) {
@@ -114,6 +119,7 @@ var _ = Describe("api", func() {
 			res, err := http.Get(uri.String())
 			Expect(err).ShouldNot(HaveOccurred())
 			defer res.Body.Close()
+			eTag := res.Header.Get("etag")
 
 			deploymentID = "api_get_current_blocking2"
 			go func() {
@@ -124,7 +130,7 @@ var _ = Describe("api", func() {
 				uri.RawQuery = query.Encode()
 				req, err := http.NewRequest("GET", uri.String(), nil)
 				req.Header.Add("Content-Type", "application/json")
-				req.Header.Add("If-None-Match", res.Header.Get("etag"))
+				req.Header.Add("If-None-Match", eTag)
 
 				res, err := http.DefaultClient.Do(req)
 				Expect(err).ShouldNot(HaveOccurred())
@@ -176,7 +182,7 @@ var _ = Describe("api", func() {
 		})
 	})
 
-	Context("POST /deployments", func() {
+	Context("PUT /deployments", func() {
 
 		It("should return BadRequest for invalid request", func() {
 
@@ -190,7 +196,7 @@ var _ = Describe("api", func() {
 			payload, err := json.Marshal(deploymentResult)
 			Expect(err).ShouldNot(HaveOccurred())
 
-			req, err := http.NewRequest("POST", uri.String(), bytes.NewReader(payload))
+			req, err := http.NewRequest("PUT", uri.String(), bytes.NewReader(payload))
 			req.Header.Add("Content-Type", "application/json")
 
 			resp, err := http.DefaultClient.Do(req)
@@ -215,7 +221,7 @@ var _ = Describe("api", func() {
 			payload, err := json.Marshal(deploymentResult)
 			Expect(err).ShouldNot(HaveOccurred())
 
-			req, err := http.NewRequest("POST", uri.String(), bytes.NewReader(payload))
+			req, err := http.NewRequest("PUT", uri.String(), bytes.NewReader(payload))
 			req.Header.Add("Content-Type", "application/json")
 
 			resp, err := http.DefaultClient.Do(req)
@@ -242,7 +248,7 @@ var _ = Describe("api", func() {
 			payload, err := json.Marshal(deploymentResult)
 			Expect(err).ShouldNot(HaveOccurred())
 
-			req, err := http.NewRequest("POST", uri.String(), bytes.NewReader(payload))
+			req, err := http.NewRequest("PUT", uri.String(), bytes.NewReader(payload))
 			req.Header.Add("Content-Type", "application/json")
 
 			resp, err := http.DefaultClient.Do(req)
@@ -265,7 +271,7 @@ var _ = Describe("api", func() {
 			uri, err := url.Parse(testServer.URL)
 			uri.Path = deploymentsEndpoint
 
-			deploymentResult := apiDeploymentResults{
+			deploymentResults := apiDeploymentResults{
 				apiDeploymentResult{
 					ID: deploymentID,
 					Status: RESPONSE_STATUS_FAIL,
@@ -273,10 +279,10 @@ var _ = Describe("api", func() {
 					Message: "Some error message",
 				},
 			}
-			payload, err := json.Marshal(deploymentResult)
+			payload, err := json.Marshal(deploymentResults)
 			Expect(err).ShouldNot(HaveOccurred())
 
-			req, err := http.NewRequest("POST", uri.String(), bytes.NewReader(payload))
+			req, err := http.NewRequest("PUT", uri.String(), bytes.NewReader(payload))
 			req.Header.Add("Content-Type", "application/json")
 
 			resp, err := http.DefaultClient.Do(req)
@@ -293,6 +299,29 @@ var _ = Describe("api", func() {
 			Expect(deployStatus).Should(Equal(RESPONSE_STATUS_FAIL))
 			Expect(deploy_error_code).Should(Equal(100))
 			Expect(deploy_error_message).Should(Equal("Some error message"))
+		})
+
+		It("should communicate status to tracking server", func() {
+			deploymentResults := apiDeploymentResults{
+				apiDeploymentResult{
+					ID: "deploymentID",
+					Status: RESPONSE_STATUS_FAIL,
+					ErrorCode: 100,
+					Message: "Some error message",
+				},
+			}
+
+			err := transmitDeploymentResultsToServer(deploymentResults)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(testLastTrackerVars["clusterID"]).To(Equal("CLUSTER_ID"))
+			Expect(testLastTrackerVars["instanceID"]).To(Equal("INSTANCE_ID"))
+			Expect(testLastTrackerBody).ToNot(BeEmpty())
+
+			var uploaded apiDeploymentResults
+			json.Unmarshal(testLastTrackerBody, &uploaded)
+
+			Expect(uploaded).To(Equal(deploymentResults))
 		})
 	})
 })
@@ -323,16 +352,18 @@ func insertTestDeployment(testServer *httptest.Server, deploymentID string) {
 		DataScopeID: deploymentID,
 		BundleConfigJSON: string(bundleJson),
 		ConfigJSON: string(bundleJson),
-		Status: "",
 		Created: "",
 		CreatedBy: "",
 		Updated: "",
 		UpdatedBy: "",
 		BundleName: deploymentID,
-		BundleURI: "",
-		BundleChecksum: "",
-		BundleChecksumType: "",
+		BundleURI: bundle.URI,
+		BundleChecksum: bundle.Checksum,
+		BundleChecksumType: bundle.ChecksumType,
 		LocalBundleURI: "x",
+		DeployStatus: "",
+		DeployErrorCode: 0,
+		DeployErrorMessage: "",
 	}
 
 	err = InsertDeployment(tx, dep)

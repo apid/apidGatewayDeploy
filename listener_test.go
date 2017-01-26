@@ -11,11 +11,6 @@ import (
 
 var _ = Describe("listener", func() {
 
-	BeforeEach(func() {
-		_, err := getDB().Exec("DELETE FROM deployments")
-		Expect(err).ShouldNot(HaveOccurred())
-	})
-
 	Context("ApigeeSync snapshot event", func() {
 
 		It("should set DB and process", func(done Done) {

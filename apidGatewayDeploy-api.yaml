@@ -118,7 +118,7 @@ paths:
             $ref: '#/definitions/DeploymentResponse'
         '304':
           description: Deployment not modified.
-    post:
+    put:
       description: Save results of deployment
       parameters:
         - name: _

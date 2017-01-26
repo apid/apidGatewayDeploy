@@ -1,80 +1,115 @@
 package apiGatewayDeploy
 
 import (
+	"crypto/md5"
+	"encoding/base64"
+	"encoding/hex"
+	"errors"
 	"fmt"
+	"hash"
+	"hash/crc32"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
 	"time"
-	"encoding/base64"
-	"io/ioutil"
-	"hash/crc32"
-	"errors"
-	"crypto/md5"
-	"hash"
-	"encoding/hex"
 )
 
-const (
-	DOWNLOAD_ATTEMPTS = 3
-)
+var bundleRetryDelay time.Duration = time.Second
+var bundleDownloadTimeout time.Duration = 10 * time.Minute
 
-var (
-	backOffMultiplier = 10 * time.Second
-)
+// simple doubling back-off
+func createBackoff(retryIn, maxBackOff time.Duration) func() {
+	return func() {
+		log.Debugf("backoff called. will retry in %s.", retryIn)
+		time.Sleep(retryIn)
+		retryIn = retryIn * time.Duration(2)
+		if retryIn > maxBackOff {
+			retryIn = maxBackOff
+		}
+	}
+}
 
-func downloadBundle(dep DataDeployment) error {
+func downloadBundle(dep DataDeployment) {
 
-	log.Debugf("starting bundle download process: %s", dep.BundleURI)
+	log.Debugf("starting bundle download process for %s: %s", dep.ID, dep.BundleURI)
 
 	hashWriter, err := getHashWriter(dep.BundleChecksumType)
 	if err != nil {
-		log.Errorf("invalid checksum type: %v", err)
-		return err
+		msg := fmt.Sprintf("invalid bundle checksum type: %v", dep.BundleChecksumType)
+		log.Error(msg)
+		setDeploymentResults(apiDeploymentResults{
+			{
+				ID:        dep.ID,
+				Status:    RESPONSE_STATUS_FAIL,
+				ErrorCode: ERROR_CODE_TODO,
+				Message:   msg,
+			},
+		})
+		return
 	}
 
-	// retry
-	var tempFile string
-	for i := 1; i <= DOWNLOAD_ATTEMPTS; i++ {
+	retryIn := bundleRetryDelay
+	maxBackOff := 5 * time.Minute
+	backOffFunc := createBackoff(retryIn, maxBackOff)
+
+	// timeout and mark deployment failed
+	timeout := time.NewTimer(bundleDownloadTimeout)
+	go func() {
+		<-timeout.C
+		log.Debugf("bundle download timeout. marking deployment %s failed. will keep retrying: %s", dep.ID, dep.BundleURI)
+		var errMessage string
+		if err != nil {
+			errMessage = fmt.Sprintf("bundle download failed: %s", err)
+		} else {
+			errMessage = "bundle download failed"
+		}
+		setDeploymentResults(apiDeploymentResults{
+			{
+				ID:        dep.ID,
+				Status:    RESPONSE_STATUS_FAIL,
+				ErrorCode: ERROR_CODE_TODO,
+				Message:   errMessage,
+			},
+		})
+	}()
+
+	// todo: we'll want to abort download if deployment is deleted
+	for {
+		var tempFile, bundleFile string
 		tempFile, err = downloadFromURI(dep.BundleURI, hashWriter, dep.BundleChecksum)
+
+		if err == nil {
+			bundleFile = getBundleFile(dep)
+			err = os.Rename(tempFile, bundleFile)
+			if err != nil {
+				log.Errorf("Unable to rename temp bundle file %s to %s: %s", tempFile, bundleFile, err)
+			}
+		}
+
+		if tempFile != "" {
+			go safeDelete(tempFile)
+		}
+
+		if err == nil {
+			err = updateLocalBundleURI(dep.ID, bundleFile)
+		}
+
+		// success!
 		if err == nil {
 			break
 		}
-		if tempFile != "" {
-			os.Remove(tempFile)
-		}
 
-		// simple back-off, we could potentially be more sophisticated
-		retryIn := time.Duration(i) * backOffMultiplier
-		log.Debugf("will retry failed download in %s: %v", retryIn, err)
-		time.Sleep(retryIn)
+		backOffFunc()
 		hashWriter.Reset()
 	}
 
-	if err != nil {
-		log.Errorf("failed %d download attempts. aborting.", DOWNLOAD_ATTEMPTS)
-		return err
-	}
-
-	bundleFile := getBundleFile(dep)
-	err = os.Rename(tempFile, bundleFile)
-	if err != nil {
-		log.Errorf("Unable to rename temp bundle file %s to %s: %s", tempFile, bundleFile, err)
-		os.Remove(tempFile)
-		return err
-	}
-
-	err = updateLocalURI(dep.ID, bundleFile)
-	if err != nil {
-		return err
-	}
+	log.Debugf("bundle for %s downloaded: %s", dep.ID, dep.BundleURI)
 
 	// send deployments to client
-	deploymentsChanged<- dep.ID
-
-	return nil
+	deploymentsChanged <- dep.ID
 }
 
 func getBundleFile(dep DataDeployment) string {

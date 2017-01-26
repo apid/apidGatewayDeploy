@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"github.com/30x/apid"
 	"github.com/apigee-labs/transicator/common"
+	"os"
+	"time"
 )
 
 const (
@@ -60,17 +62,18 @@ func processSnapshot(snapshot *common.Snapshot) {
 		log.Panicf("Error starting transaction: %v", err)
 	}
 
+	// ensure that no new database updates are made on old database
+	dbMux.Lock()
+	defer dbMux.Unlock()
+
 	defer tx.Rollback()
 	for _, table := range snapshot.Tables {
 		var err error
 		switch table.Name {
 		case DEPLOYMENT_TABLE:
 			log.Debugf("Snapshot of %s with %d rows", table.Name, len(table.Rows))
-			if len(table.Rows) == 0 {
-				return
-			}
 			for _, row := range table.Rows {
-				addDeployment(tx, row)
+				err = addDeployment(tx, row)
 			}
 		}
 		if err != nil {
@@ -84,6 +87,18 @@ func processSnapshot(snapshot *common.Snapshot) {
 	}
 
 	SetDB(db)
+
+	// if no tables, this a startup event for an existing DB, start bundle downloads that didn't finish
+	if len(snapshot.Tables) == 0 {
+		deployments, err := getUnreadyDeployments()
+		if err != nil {
+			log.Panicf("unable to query database for unready deployments: %v", err)
+		}
+		for _, dep := range deployments {
+			go downloadBundle(dep)
+		}
+	}
+
 	log.Debug("Snapshot processed")
 }
 
@@ -94,6 +109,12 @@ func processChangeList(changes *common.ChangeList) {
 		log.Panicf("Error processing ChangeList: %v", err)
 	}
 	defer tx.Rollback()
+
+	// ensure bundle download and delete updates aren't attempted while in process
+	dbMux.Lock()
+	defer dbMux.Unlock()
+
+	var bundlesToDelete []string
 	for _, change := range changes.Changes {
 		var err error
 		switch change.Table {
@@ -103,10 +124,11 @@ func processChangeList(changes *common.ChangeList) {
 				err = addDeployment(tx, change.NewRow)
 			case common.Delete:
 				var id string
-				err = change.OldRow.Get("id", &id)
+				change.OldRow.Get("id", &id)
+				localBundleUri, err := getLocalBundleURI(tx, id)
 				if err == nil {
+					bundlesToDelete = append(bundlesToDelete, localBundleUri)
 					err = deleteDeployment(tx, id)
-					// todo: delete downloaded bundle file
 				}
 			default:
 				log.Errorf("unexpected operation: %s", change.Operation)
@@ -120,58 +142,36 @@ func processChangeList(changes *common.ChangeList) {
 	if err != nil {
 		log.Panicf("Error processing ChangeList: %v", err)
 	}
+
+	// clean up old bundles
+	if len(bundlesToDelete) > 0 {
+		log.Debugf("will delete %d old bundles", len(bundlesToDelete))
+		go func() {
+			// give clients a minute to avoid conflicts
+			time.Sleep(bundleCleanupDelay)
+			for _, b := range bundlesToDelete {
+				log.Debugf("removing old bundle: %v", b)
+				safeDelete(b)
+			}
+		}()
+	}
 }
 
-func addDeployment(tx *sql.Tx, row common.Row) (err error) {
+func dataDeploymentFromRow(row common.Row) (d DataDeployment, err error) {
 
-	d := DataDeployment{}
-	err = row.Get("id", &d.ID)
-	if err != nil {
-		return
-	}
-	err = row.Get("bundle_config_id", &d.BundleConfigID)
-	if err != nil {
-		return
-	}
-	err = row.Get("apid_cluster_id", &d.ApidClusterID)
-	if err != nil {
-		return
-	}
-	err = row.Get("data_scope_id", &d.DataScopeID)
-	if err != nil {
-		return
-	}
-	err = row.Get("bundle_config_json", &d.BundleConfigJSON)
-	if err != nil {
-		return
-	}
-	err = row.Get("config_json", &d.ConfigJSON)
-	if err != nil {
-		return
-	}
-	err = row.Get("status", &d.Status)
-	if err != nil {
-		return
-	}
-	err = row.Get("created", &d.Created)
-	if err != nil {
-		return
-	}
-	err = row.Get("created_by", &d.CreatedBy)
-	if err != nil {
-		return
-	}
-	err = row.Get("updated", &d.Updated)
-	if err != nil {
-		return
-	}
-	err = row.Get("updated_by", &d.UpdatedBy)
-	if err != nil {
-		return
-	}
+	row.Get("id", &d.ID)
+	row.Get("bundle_config_id", &d.BundleConfigID)
+	row.Get("apid_cluster_id", &d.ApidClusterID)
+	row.Get("data_scope_id", &d.DataScopeID)
+	row.Get("bundle_config_json", &d.BundleConfigJSON)
+	row.Get("config_json", &d.ConfigJSON)
+	row.Get("created", &d.Created)
+	row.Get("created_by", &d.CreatedBy)
+	row.Get("updated", &d.Updated)
+	row.Get("updated_by", &d.UpdatedBy)
 
 	var bc bundleConfigJson
-	err = json.Unmarshal([]byte(d.BundleConfigJSON), &bc)
+	json.Unmarshal([]byte(d.BundleConfigJSON), &bc)
 	if err != nil {
 		log.Errorf("JSON decoding Manifest failed: %v", err)
 		return
@@ -182,6 +182,17 @@ func addDeployment(tx *sql.Tx, row common.Row) (err error) {
 	d.BundleChecksumType = bc.ChecksumType
 	d.BundleChecksum = bc.Checksum
 
+	return
+}
+
+func addDeployment(tx *sql.Tx, row common.Row) (err error) {
+
+	var d DataDeployment
+	d, err = dataDeploymentFromRow(row)
+	if err != nil {
+		return
+	}
+
 	err = InsertDeployment(tx, d)
 	if err != nil {
 		return
@@ -190,4 +201,10 @@ func addDeployment(tx *sql.Tx, row common.Row) (err error) {
 	// todo: limit # concurrent downloads?
 	go downloadBundle(d)
 	return
+}
+
+func safeDelete(file string) {
+	if e := os.Remove(file); e != nil && !os.IsNotExist(e) {
+		log.Warnf("unable to delete file %s: %v", file, e)
+	}
 }

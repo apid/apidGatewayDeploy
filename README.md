@@ -1,4 +1,4 @@
-# apidVerifyAPIKey
+# apidGatewayDeploy
 
 This core plugin for [apid](http://github.com/30x/apid) responds to 
 [apidApigeeSync](https://github.com/30x/apidApigeeSync) events and publishes an API that allows clients to 
@@ -12,6 +12,26 @@ This plugin simply tracks counters based on called URIs:
 * `POST /deployments/` - update deployments
 
 See [apidGatewayDeploy-api.yaml]() for full spec.
+
+## Configuration
+
+#### gatewaydeploy_debounce_duration
+Window of time during which deployment changes are gathered before sending to client.
+Default: "bundles"
+
+#### gatewaydeploy_bundle_cleanup_delay
+Duration between deleting a deployment and deleting it's bundles on disk. 
+Default: "1s"
+
+#### gatewaydeploy_bundle_download_timeout
+Duration before bundle download marks deployment as failed (will continue retries regardless). 
+Default: "1m"
+
+#### gatewaydeploy_bundle_dir
+Relative location from local_storage_path in which to store local bundle files.
+Default: "5m"
+
+(durations note, see: https://golang.org/pkg/time/#ParseDuration)
 
 ## Building and running standalone
 
