@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"strconv"
-	"time"
-	"sync"
 	"net/url"
+	"strconv"
+	"sync"
+	"sync/atomic"
+	"time"
 )
 
 const (
@@ -23,6 +24,7 @@ const (
 var (
 	deploymentsChanged = make(chan string)
 	addSubscriber      = make(chan chan string)
+	eTag               int64
 )
 
 type errorResponse struct {
@@ -94,13 +96,14 @@ func distributeEvents() {
 			subscribers = make(map[chan string]struct{})
 			m := msg
 			msg = ""
+			incrementETag()
 			mut.Unlock()
 			log.Debugf("Delivering deployment change %s to %d subscribers", m, len(subs))
-			incrementETag()
 			for subscriber := range subs {
 				select {
 				case subscriber <- m:
 					log.Debugf("Handling deploy response for: %s", m)
+					log.Debugf("delivering TO: %v", subscriber)
 				default:
 					log.Debugf("listener too far behind, message dropped")
 				}
@@ -153,11 +156,7 @@ func apiGetCurrentDeployments(w http.ResponseWriter, r *http.Request) {
 	log.Debugf("if-none-match: %s", ifNoneMatch)
 
 	// send unmodified if matches prior eTag and no timeout
-	eTag, err := getETag()
-	if err != nil {
-		writeDatabaseError(w)
-		return
-	}
+	eTag := getETag()
 	if eTag == ifNoneMatch && timeout == 0 {
 		w.WriteHeader(http.StatusNotModified)
 		return
@@ -210,16 +209,16 @@ func sendDeployments(w http.ResponseWriter, dataDeps []DataDeployment, eTag stri
 
 	for _, d := range dataDeps {
 		apiDeps = append(apiDeps, ApiDeployment{
-			ID:                d.ID,
-			ScopeId:           d.DataScopeID,
-			Created:           d.Created,
-			CreatedBy:         d.CreatedBy,
-			Updated:           d.Updated,
-			UpdatedBy:         d.UpdatedBy,
-			BundleConfigJson:  []byte(d.BundleConfigJSON),
-			ConfigJson:        []byte(d.ConfigJSON),
-			DisplayName:       d.BundleName,
-			URI:               d.LocalBundleURI,
+			ID:               d.ID,
+			ScopeId:          d.DataScopeID,
+			Created:          d.Created,
+			CreatedBy:        d.CreatedBy,
+			Updated:          d.Updated,
+			UpdatedBy:        d.UpdatedBy,
+			BundleConfigJson: []byte(d.BundleConfigJSON),
+			ConfigJson:       []byte(d.ConfigJSON),
+			DisplayName:      d.BundleName,
+			URI:              d.LocalBundleURI,
 		})
 	}
 
@@ -328,4 +327,14 @@ func transmitDeploymentResultsToServer(validResults apiDeploymentResults) error 
 		resp.Body.Close()
 		return nil
 	}
+}
+
+// call whenever the list of deployments changes
+func incrementETag() {
+	atomic.AddInt64(&eTag, 1)
+}
+
+func getETag() string {
+	e := atomic.LoadInt64(&eTag)
+	return strconv.FormatInt(e, 10)
 }

@@ -39,10 +39,6 @@ type SQLExec interface {
 
 func InitDB(db apid.DB) error {
 	_, err := db.Exec(`
-	CREATE TABLE IF NOT EXISTS etag (
-		value integer
-	);
-	INSERT INTO etag (value) VALUES (1);
 	CREATE TABLE IF NOT EXISTS deployments (
 		id character varying(36) NOT NULL,
 		bundle_config_id varchar(36) NOT NULL,
@@ -86,42 +82,6 @@ func SetDB(db apid.DB) {
 		go InitAPI()
 	}
 	unsafeDB = db
-}
-
-// call whenever the list of deployments changes
-func incrementETag() error {
-
-	stmt, err := getDB().Prepare("UPDATE etag SET value = value+1;")
-	if err != nil {
-		log.Errorf("prepare update etag failed: %v", err)
-		return err
-	}
-	defer stmt.Close()
-
-	_, err = stmt.Exec()
-	if err != nil {
-		log.Errorf("update etag failed: %v", err)
-		return err
-	}
-
-	log.Debugf("etag incremented")
-	return err
-}
-
-func getETag() (string, error) {
-
-	var eTag string
-	db := getDB()
-	row := db.QueryRow("SELECT value FROM etag")
-	err := row.Scan(&eTag)
-	//err := getDB().QueryRow("SELECT value FROM etag").Scan(&eTag)
-	if err != nil {
-		log.Errorf("select etag failed: %v", err)
-		return "", err
-	}
-
-	log.Debugf("etag queried: %v", eTag)
-	return eTag, err
 }
 
 func InsertDeployment(tx *sql.Tx, dep DataDeployment) error {

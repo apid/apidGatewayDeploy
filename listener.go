@@ -64,6 +64,7 @@ func processSnapshot(snapshot *common.Snapshot) {
 
 	// ensure that no new database updates are made on old database
 	dbMux.Lock()
+	defer dbMux.Unlock()
 
 	defer tx.Rollback()
 	for _, table := range snapshot.Tables {
@@ -86,7 +87,6 @@ func processSnapshot(snapshot *common.Snapshot) {
 	}
 
 	SetDB(db)
-	dbMux.Unlock()
 
 	// if no tables, this a startup event for an existing DB, start bundle downloads that didn't finish
 	if len(snapshot.Tables) == 0 {
@@ -109,6 +109,11 @@ func processChangeList(changes *common.ChangeList) {
 		log.Panicf("Error processing ChangeList: %v", err)
 	}
 	defer tx.Rollback()
+
+	// ensure bundle download and delete updates aren't attempted while in process
+	dbMux.Lock()
+	defer dbMux.Unlock()
+
 	var bundlesToDelete []string
 	for _, change := range changes.Changes {
 		var err error
