@@ -34,11 +34,9 @@ func createBackoff(retryIn, maxBackOff time.Duration) func() {
 
 func downloadBundle(dep DataDeployment) {
 
-	log.Debugf("starting bundle download process for %s: %s", dep.ID, dep.BundleURI)
-
 	hashWriter, err := getHashWriter(dep.BundleChecksumType)
 	if err != nil {
-		msg := fmt.Sprintf("invalid bundle checksum type: %v", dep.BundleChecksumType)
+		msg := fmt.Sprintf("invalid bundle checksum type: %s for deployment: %s", dep.BundleChecksumType, dep.ID)
 		log.Error(msg)
 		setDeploymentResults(apiDeploymentResults{
 			{
@@ -50,6 +48,8 @@ func downloadBundle(dep DataDeployment) {
 		})
 		return
 	}
+
+	log.Debugf("starting bundle download process for %s: %s", dep.ID, dep.BundleURI)
 
 	retryIn := bundleRetryDelay
 	maxBackOff := 5 * time.Minute
