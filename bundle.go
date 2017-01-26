@@ -202,10 +202,20 @@ func getHashWriter(hashType string) (hash.Hash, error) {
 	case "crc-32":
 		hashWriter = crc32.NewIEEE()
 	default:
-		return nil, errors.New("checksumType must be md5 or crc-32")
+		// todo: temporary - this disables checksums until server implements (XAPID-544)
+		hashWriter = fakeHash{md5.New()}
+		//return nil, errors.New("checksumType must be md5 or crc-32")
 	}
 
 	return hashWriter, nil
+}
+
+type fakeHash struct {
+	hash.Hash
+}
+
+func (f fakeHash) Sum(b []byte) []byte {
+	return []byte("")
 }
 
 //func checksumFile(hashType, checksum string, fileName string) error {
