@@ -90,13 +90,15 @@ func processSnapshot(snapshot *common.Snapshot) {
 
 	// if no tables, this a startup event for an existing DB, start bundle downloads that didn't finish
 	if len(snapshot.Tables) == 0 {
-		deployments, err := getUnreadyDeployments()
-		if err != nil {
-			log.Panicf("unable to query database for unready deployments: %v", err)
-		}
-		for _, dep := range deployments {
-			go downloadBundle(dep)
-		}
+		go func() {
+			deployments, err := getUnreadyDeployments()
+			if err != nil {
+				log.Panicf("unable to query database for unready deployments: %v", err)
+			}
+			for _, dep := range deployments {
+				go downloadBundle(dep)
+			}
+		}()
 	}
 
 	log.Debug("Snapshot processed")
