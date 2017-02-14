@@ -2,7 +2,7 @@ package apiGatewayDeploy
 
 import (
 	"fmt"
-	"github.com/30x/apid"
+	"github.com/30x/apid-core"
 	"net/url"
 	"os"
 	"path"

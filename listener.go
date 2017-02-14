@@ -3,7 +3,7 @@ package apiGatewayDeploy
 import (
 	"database/sql"
 	"encoding/json"
-	"github.com/30x/apid"
+	"github.com/30x/apid-core"
 	"github.com/apigee-labs/transicator/common"
 	"os"
 	"time"

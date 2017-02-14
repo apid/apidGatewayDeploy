@@ -4,8 +4,8 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
-	"github.com/30x/apid"
-	"github.com/30x/apid/factory"
+	"github.com/30x/apid-core"
+	"github.com/30x/apid-core/factory"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
