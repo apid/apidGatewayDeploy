@@ -3,7 +3,7 @@ package apiGatewayDeploy
 import (
 	"database/sql"
 	"fmt"
-	"github.com/30x/apid"
+	"github.com/30x/apid-core"
 	"sync"
 )
 

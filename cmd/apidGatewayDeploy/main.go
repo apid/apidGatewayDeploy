@@ -3,8 +3,8 @@ package main
 import (
 	"encoding/json"
 	"flag"
-	"github.com/30x/apid"
-	"github.com/30x/apid/factory"
+	"github.com/30x/apid-core"
+	"github.com/30x/apid-core/factory"
 	"github.com/30x/apidGatewayDeploy"
 	_ "github.com/30x/apidGatewayDeploy"
 	"io/ioutil"
