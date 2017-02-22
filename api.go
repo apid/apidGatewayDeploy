@@ -300,12 +300,12 @@ func transmitDeploymentResultsToServer(validResults apiDeploymentResults) error 
 	maxBackOff := 5 * time.Minute
 	backOffFunc := createBackoff(retryIn, maxBackOff)
 
-	uri, err := url.Parse(apiServerBaseURI.String())
+	_, err := url.Parse(apiServerBaseURI.String())
 	if err != nil {
 		log.Errorf("unable to parse apiServerBaseURI %s: %v", apiServerBaseURI.String(), err)
 		return err
 	}
-	uri.Path = fmt.Sprintf("/apidtracker/clusters/%s/apids/%s/deployments", apidClusterID, apidInstanceID)
+	apiPath := fmt.Sprintf("%s/apidtracker/clusters/%s/apids/%s/deployments",apiServerBaseURI.String(), apidClusterID, apidInstanceID)
 
 	resultJSON, err := json.Marshal(validResults)
 	if err != nil {
@@ -314,8 +314,8 @@ func transmitDeploymentResultsToServer(validResults apiDeploymentResults) error 
 	}
 
 	for {
-		log.Debugf("transmitting deployment results to tracker by URL=%s data=%s",uri.String(), string(resultJSON))
-		req, err := http.NewRequest("PUT", uri.String(), bytes.NewReader(resultJSON))
+		log.Debugf("transmitting deployment results to tracker by URL=%s data=%s",apiPath, string(resultJSON))
+		req, err := http.NewRequest("PUT", apiPath, bytes.NewReader(resultJSON))
 		req.Header.Add("Content-Type", "application/json")
 		addHeaders(req)
 
@@ -326,13 +326,13 @@ func transmitDeploymentResultsToServer(validResults apiDeploymentResults) error 
 				log.Errorf("failed to communicate with tracking service: %v", err)
 			} else {
 				b, _ := ioutil.ReadAll(resp.Body)
-				log.Errorf("tracking service call failed to %s , code: %d, body: %s", uri.String(), resp.StatusCode, string(b))
+				log.Errorf("tracking service call failed to %s , code: %d, body: %s", apiPath, resp.StatusCode, string(b))
 			}
 			backOffFunc()
 			continue
 		}
 		b, _ := ioutil.ReadAll(resp.Body)
-		log.Debugf("tracking service returned %s , code: %d, body: %s", uri.String(), resp.StatusCode, string(b))
+		log.Debugf("tracking service returned %s , code: %d, body: %s", apiPath, resp.StatusCode, string(b))
 		return nil
 	}
 }
