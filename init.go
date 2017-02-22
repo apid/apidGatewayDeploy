@@ -18,18 +18,22 @@ const (
 	configApiServerBaseURI      = "apigeesync_proxy_server_base"
 	configApidInstanceID        = "apigeesync_apid_instance_id"
 	configApidClusterID         = "apigeesync_cluster_id"
+	configConcurrentDownloads   = "apigeesync_concurrent_downloads"
+	configDownloadQueueSize     = "apigeesync_download_queue_size"
 )
 
 var (
-	services           apid.Services
-	log                apid.LogService
-	data               apid.DataService
-	bundlePath         string
-	debounceDuration   time.Duration
-	bundleCleanupDelay time.Duration
-	apiServerBaseURI   *url.URL
-	apidInstanceID     string
-	apidClusterID      string
+	services            apid.Services
+	log                 apid.LogService
+	data                apid.DataService
+	bundlePath          string
+	debounceDuration    time.Duration
+	bundleCleanupDelay  time.Duration
+	apiServerBaseURI    *url.URL
+	apidInstanceID      string
+	apidClusterID       string
+	downloadQueueSize   int
+	concurrentDownloads int
 )
 
 func init() {
@@ -66,6 +70,8 @@ func initPlugin(s apid.Services) (apid.PluginData, error) {
 	config.SetDefault(configDebounceDuration, time.Second)
 	config.SetDefault(configBundleCleanupDelay, time.Minute)
 	config.SetDefault(configBundleDownloadTimeout, 5*time.Minute)
+	config.SetDefault(configConcurrentDownloads, 15)
+	config.SetDefault(configDownloadQueueSize, 2000)
 
 	debounceDuration = config.GetDuration(configDebounceDuration)
 	if debounceDuration < time.Millisecond {
@@ -84,6 +90,8 @@ func initPlugin(s apid.Services) (apid.PluginData, error) {
 
 	data = services.Data()
 
+	concurrentDownloads = config.GetInt(configConcurrentDownloads)
+	downloadQueueSize = config.GetInt(configDownloadQueueSize)
 	relativeBundlePath := config.GetString(configBundleDirKey)
 	storagePath := config.GetString("local_storage_path")
 	bundlePath = path.Join(storagePath, relativeBundlePath)

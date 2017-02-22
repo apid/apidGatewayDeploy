@@ -50,6 +50,8 @@ var _ = BeforeSuite(func() {
 	bundleCleanupDelay = time.Millisecond
 	bundleRetryDelay = 10 * time.Millisecond
 	bundleDownloadTimeout = 50 * time.Millisecond
+	concurrentDownloads = 1
+	downloadQueueSize = 1
 
 	router := apid.API().Router()
 	// fake an unreliable bundle repo

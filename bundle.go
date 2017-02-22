@@ -17,11 +17,12 @@ import (
 	"time"
 )
 
-var numConcurrentDownloads = 15
-var bundleRetryDelay time.Duration = time.Second
-var bundleDownloadTimeout time.Duration = 10 * time.Minute
-var downloadQueue = make(chan *DownloadRequest, 200)
-var workerQueue = make(chan chan *DownloadRequest, numConcurrentDownloads)
+var (
+	bundleRetryDelay      time.Duration = time.Second
+	bundleDownloadTimeout time.Duration = 10 * time.Minute
+	downloadQueue                       = make(chan *DownloadRequest, downloadQueueSize)
+	workerQueue                         = make(chan chan *DownloadRequest, concurrentDownloads)
+)
 
 // simple doubling back-off
 func createBackoff(retryIn, maxBackOff time.Duration) func() {
@@ -245,7 +246,7 @@ func (f fakeHash) Sum(b []byte) []byte {
 func initializeBundleDownloading() {
 
 	// create workers
-	for i := 0; i < numConcurrentDownloads; i++ {
+	for i := 0; i < concurrentDownloads; i++ {
 		worker := BundleDownloader{
 			id:       i + 1,
 			workChan: make(chan *DownloadRequest),
