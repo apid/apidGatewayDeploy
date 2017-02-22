@@ -287,6 +287,13 @@ func apiSetDeploymentResults(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("OK"))
 }
 
+
+func addHeaders(req *http.Request) {
+	var token = services.Config().GetString("apigeesync_bearer_token")
+	req.Header.Add("Authorization", "Bearer "+token)
+}
+
+
 func transmitDeploymentResultsToServer(validResults apiDeploymentResults) error {
 
 	retryIn := bundleRetryDelay
@@ -310,6 +317,7 @@ func transmitDeploymentResultsToServer(validResults apiDeploymentResults) error 
 		log.Debugf("transmitting deployment results to tracker: %s", string(resultJSON))
 		req, err := http.NewRequest("PUT", uri.String(), bytes.NewReader(resultJSON))
 		req.Header.Add("Content-Type", "application/json")
+		addHeaders(req)
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil || resp.StatusCode != http.StatusOK {
@@ -317,7 +325,7 @@ func transmitDeploymentResultsToServer(validResults apiDeploymentResults) error 
 				log.Errorf("failed to communicate with tracking service: %v", err)
 			} else {
 				b, _ := ioutil.ReadAll(resp.Body)
-				log.Errorf("tracking service call failed. code: %d, body: %s", resp.StatusCode, string(b))
+				log.Errorf("tracking service call failed to %s , code: %d, body: %s", uri.String(), resp.StatusCode, string(b))
 			}
 			backOffFunc()
 			resp.Body.Close()
