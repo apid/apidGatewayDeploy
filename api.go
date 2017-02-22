@@ -305,7 +305,7 @@ func transmitDeploymentResultsToServer(validResults apiDeploymentResults) error 
 		log.Errorf("unable to parse apiServerBaseURI %s: %v", apiServerBaseURI.String(), err)
 		return err
 	}
-	uri.Path = fmt.Sprintf("/clusters/%s/apids/%s/deployments", apidClusterID, apidInstanceID)
+	uri.Path = fmt.Sprintf("/edgex/clusters/%s/apids/%s/deployments", apidClusterID, apidInstanceID)
 
 	resultJSON, err := json.Marshal(validResults)
 	if err != nil {
