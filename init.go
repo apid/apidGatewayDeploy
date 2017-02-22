@@ -2,11 +2,12 @@ package apiGatewayDeploy
 
 import (
 	"fmt"
-	"github.com/30x/apid-core"
 	"net/url"
 	"os"
 	"path"
 	"time"
+
+	"github.com/30x/apid-core"
 )
 
 const (
@@ -90,6 +91,8 @@ func initPlugin(s apid.Services) (apid.PluginData, error) {
 		return pluginData, fmt.Errorf("Failed bundle directory creation: %v", err)
 	}
 	log.Infof("Bundle directory path is %s", bundlePath)
+
+	initializeBundleDownloading()
 
 	go distributeEvents()
 

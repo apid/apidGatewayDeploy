@@ -17,8 +17,11 @@ import (
 	"time"
 )
 
+var numConcurrentDownloads = 15
 var bundleRetryDelay time.Duration = time.Second
 var bundleDownloadTimeout time.Duration = 10 * time.Minute
+var downloadQueue = make(chan *DownloadRequest, 200)
+var workerQueue = make(chan chan *DownloadRequest, numConcurrentDownloads)
 
 // simple doubling back-off
 func createBackoff(retryIn, maxBackOff time.Duration) func() {
@@ -32,7 +35,7 @@ func createBackoff(retryIn, maxBackOff time.Duration) func() {
 	}
 }
 
-func downloadBundle(dep DataDeployment) {
+func queueDownloadRequest(dep DataDeployment) {
 
 	hashWriter, err := getHashWriter(dep.BundleChecksumType)
 	if err != nil {
@@ -49,13 +52,17 @@ func downloadBundle(dep DataDeployment) {
 		return
 	}
 
-	log.Debugf("starting bundle download process for %s: %s", dep.ID, dep.BundleURI)
-
 	retryIn := bundleRetryDelay
 	maxBackOff := 5 * time.Minute
-	backOffFunc := createBackoff(retryIn, maxBackOff)
+	req := &DownloadRequest{
+		dep:         dep,
+		hashWriter:  hashWriter,
+		bundleFile:  getBundleFile(dep),
+		backoffFunc: createBackoff(retryIn, maxBackOff),
+	}
+	downloadQueue <- req
 
-	// timeout and mark deployment failed
+	// timeout and mark deployment failed (but retries will continue)
 	timeout := time.NewTimer(bundleDownloadTimeout)
 	go func() {
 		<-timeout.C
@@ -76,34 +83,51 @@ func downloadBundle(dep DataDeployment) {
 		})
 	}()
 
-	// todo: we'll want to abort download if deployment is deleted
-	for {
-		var tempFile, bundleFile string
-		tempFile, err = downloadFromURI(dep.BundleURI, hashWriter, dep.BundleChecksum)
+}
 
-		if err == nil {
-			bundleFile = getBundleFile(dep)
-			err = os.Rename(tempFile, bundleFile)
-			if err != nil {
-				log.Errorf("Unable to rename temp bundle file %s to %s: %s", tempFile, bundleFile, err)
-			}
+type DownloadRequest struct {
+	dep         DataDeployment
+	hashWriter  hash.Hash
+	bundleFile  string
+	backoffFunc func()
+}
+
+func (r *DownloadRequest) downloadBundle() {
+
+	dep := r.dep
+	log.Debugf("starting bundle download attempt for %s: %s", dep.ID, dep.BundleURI)
+
+	deployments, err := getDeployments("WHERE id=$1", dep.ID)
+	if err == nil && len(deployments) == 0 {
+		log.Debugf("never mind, deployment %s was deleted", dep.ID)
+		return
+	}
+
+	r.hashWriter.Reset()
+	tempFile, err := downloadFromURI(dep.BundleURI, r.hashWriter, dep.BundleChecksum)
+
+	if err == nil {
+		err = os.Rename(tempFile, r.bundleFile)
+		if err != nil {
+			log.Errorf("Unable to rename temp bundle file %s to %s: %s", tempFile, r.bundleFile, err)
 		}
+	}
 
-		if tempFile != "" {
-			go safeDelete(tempFile)
-		}
+	if tempFile != "" {
+		go safeDelete(tempFile)
+	}
 
-		if err == nil {
-			err = updateLocalBundleURI(dep.ID, bundleFile)
-		}
+	if err == nil {
+		err = updateLocalBundleURI(dep.ID, r.bundleFile)
+	}
 
-		// success!
-		if err == nil {
-			break
-		}
-
-		backOffFunc()
-		hashWriter.Reset()
+	if err != nil {
+		// add myself back into the queue after back off
+		go func() {
+			r.backoffFunc()
+			downloadQueue <- r
+		}()
+		return
 	}
 
 	log.Debugf("bundle for %s downloaded: %s", dep.ID, dep.BundleURI)
@@ -218,31 +242,62 @@ func (f fakeHash) Sum(b []byte) []byte {
 	return []byte("")
 }
 
-//func checksumFile(hashType, checksum string, fileName string) error {
-//
-//	hashWriter, err := getHashWriter(hashType)
-//	if err != nil {
-//		return err
-//	}
-//
-//	file, err := os.Open(fileName)
-//	if err != nil {
-//		return err
-//	}
-//	defer file.Close()
-//
-//	if _, err := io.Copy(hashWriter, file); err != nil {
-//		return err
-//	}
-//
-//	hashBytes := hashWriter.Sum(nil)
-//	//hashBytes := hashWriter.Sum(nil)[:hasher.Size()]
-//	//hashBytes := hashWriter.Sum(nil)[:]
-//
-//	//hex.EncodeToString(hashBytes)
-//	if checksum != hex.EncodeToString(hashBytes) {
-//		return errors.New(fmt.Sprintf("bad checksum for %s", fileName))
-//	}
-//
-//	return nil
-//}
+func initializeBundleDownloading() {
+
+	// create workers
+	for i := 0; i < numConcurrentDownloads; i++ {
+		worker := BundleDownloader{
+			id:       i + 1,
+			workChan: make(chan *DownloadRequest),
+			quitChan: make(chan bool),
+		}
+		worker.Start()
+	}
+
+	// run dispatcher
+	go func() {
+		for {
+			select {
+			case req := <-downloadQueue:
+				log.Debugf("dispatching downloader for: %s", req.bundleFile)
+				go func() {
+					worker := <-workerQueue
+					log.Debugf("got a worker for: %s", req.bundleFile)
+					worker <- req
+				}()
+			}
+		}
+	}()
+}
+
+type BundleDownloader struct {
+	id       int
+	workChan chan *DownloadRequest
+	quitChan chan bool
+}
+
+func (w *BundleDownloader) Start() {
+	go func() {
+		log.Debugf("started bundle downloader %d", w.id)
+		for {
+			// wait for work
+			workerQueue <- w.workChan
+
+			select {
+			case req := <-w.workChan:
+				log.Debugf("starting download %s", req.bundleFile)
+				req.downloadBundle()
+
+			case <-w.quitChan:
+				log.Debugf("bundle downloader %d stopped", w.id)
+				return
+			}
+		}
+	}()
+}
+
+func (w *BundleDownloader) Stop() {
+	go func() {
+		w.quitChan <- true
+	}()
+}

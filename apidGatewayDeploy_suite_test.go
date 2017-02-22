@@ -4,16 +4,17 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
-	"github.com/30x/apid-core"
-	"github.com/30x/apid-core/factory"
+	"encoding/hex"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
 	"testing"
 	"time"
-	"net/url"
-	"encoding/hex"
-	"os"
+
+	"github.com/30x/apid-core"
+	"github.com/30x/apid-core/factory"
 )
 
 var (
@@ -53,10 +54,21 @@ var _ = BeforeSuite(func() {
 	router := apid.API().Router()
 	// fake an unreliable bundle repo
 	count := 1
+	failedOnce := false
+	router.HandleFunc("/bundles/failonce", func(w http.ResponseWriter, req *http.Request) {
+		if failedOnce {
+			vars := apid.API().Vars(req)
+			w.Write([]byte("/bundles/" + vars["id"]))
+		} else {
+			failedOnce = true
+			w.WriteHeader(500)
+		}
+	}).Methods("GET")
+
 	router.HandleFunc("/bundles/{id}", func(w http.ResponseWriter, req *http.Request) {
 		count++
 		vars := apid.API().Vars(req)
-		if count % 2 == 0 {
+		if count%2 == 0 {
 			w.WriteHeader(500)
 			return
 		}
@@ -71,7 +83,7 @@ var _ = BeforeSuite(func() {
 	router.HandleFunc("/clusters/{clusterID}/apids/{instanceID}/deployments",
 		func(w http.ResponseWriter, req *http.Request) {
 			count++
-			if count % 2 == 0 {
+			if count%2 == 0 {
 				w.WriteHeader(500)
 				return
 			}
@@ -82,7 +94,7 @@ var _ = BeforeSuite(func() {
 
 			w.Write([]byte("OK"))
 
-	}).Methods("PUT")
+		}).Methods("PUT")
 	testServer = httptest.NewServer(router)
 
 	apiServerBaseURI, err = url.Parse(testServer.URL)

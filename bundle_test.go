@@ -2,10 +2,11 @@ package apiGatewayDeploy
 
 import (
 	"encoding/json"
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
 	"net/url"
 	"time"
+
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("bundle", func() {
@@ -60,7 +61,7 @@ var _ = Describe("bundle", func() {
 			err = tx.Commit()
 			Expect(err).ShouldNot(HaveOccurred())
 
-			go downloadBundle(dep)
+			queueDownloadRequest(dep)
 
 			// give download time to timeout
 			time.Sleep(bundleDownloadTimeout + (100 * time.Millisecond))
@@ -97,6 +98,73 @@ var _ = Describe("bundle", func() {
 			Expect(d.LocalBundleURI).To(BeAnExistingFile())
 		})
 
+		It("should not continue attempts if deployment has been deleted", func() {
+
+			deploymentID := "bundle_download_deployment_deleted"
+
+			uri, err := url.Parse(testServer.URL)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			uri.Path = "/bundles/failonce"
+			bundleUri := uri.String()
+			bundle := bundleConfigJson{
+				Name:         uri.Path,
+				URI:          bundleUri,
+				ChecksumType: "crc-32",
+			}
+			bundle.Checksum = testGetChecksum(bundle.ChecksumType, bundleUri)
+			bundleJson, err := json.Marshal(bundle)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			tx, err := getDB().Begin()
+			Expect(err).ShouldNot(HaveOccurred())
+
+			dep := DataDeployment{
+				ID:                 deploymentID,
+				BundleConfigID:     deploymentID,
+				ApidClusterID:      deploymentID,
+				DataScopeID:        deploymentID,
+				BundleConfigJSON:   string(bundleJson),
+				ConfigJSON:         string(bundleJson),
+				Created:            "",
+				CreatedBy:          "",
+				Updated:            "",
+				UpdatedBy:          "",
+				BundleName:         deploymentID,
+				BundleURI:          bundle.URI,
+				BundleChecksum:     bundle.Checksum,
+				BundleChecksumType: bundle.ChecksumType,
+				LocalBundleURI:     "",
+				DeployStatus:       "",
+				DeployErrorCode:    0,
+				DeployErrorMessage: "",
+			}
+
+			err = InsertDeployment(tx, dep)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			err = tx.Commit()
+			Expect(err).ShouldNot(HaveOccurred())
+
+			queueDownloadRequest(dep)
+
+			// skip first try
+			time.Sleep(bundleRetryDelay)
+
+			// delete deployment
+			tx, err = getDB().Begin()
+			Expect(err).ShouldNot(HaveOccurred())
+			deleteDeployment(tx, dep.ID)
+			err = tx.Commit()
+			Expect(err).ShouldNot(HaveOccurred())
+
+			// wait for final
+			time.Sleep(bundleRetryDelay)
+
+			// No way to test this programmatically currently
+			// search logs for "never mind, deployment bundle_download_deployment_deleted was deleted"
+		})
+
 		// todo: temporary - this tests that checksum is disabled until server implements (XAPID-544)
 		It("should TEMPORARILY download even if empty Checksum and ChecksumType", func() {
 
@@ -111,7 +179,7 @@ var _ = Describe("bundle", func() {
 				Name:         uri.Path,
 				URI:          bundleUri,
 				ChecksumType: "",
-				Checksum: "",
+				Checksum:     "",
 			}
 			bundleJson, err := json.Marshal(bundle)
 			Expect(err).ShouldNot(HaveOccurred())
@@ -146,7 +214,7 @@ var _ = Describe("bundle", func() {
 			err = tx.Commit()
 			Expect(err).ShouldNot(HaveOccurred())
 
-			go downloadBundle(dep)
+			queueDownloadRequest(dep)
 
 			// give download time to finish
 			time.Sleep(bundleDownloadTimeout + (100 * time.Millisecond))
