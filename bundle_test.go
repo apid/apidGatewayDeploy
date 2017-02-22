@@ -5,6 +5,9 @@ import (
 	"net/url"
 	"time"
 
+	"net/http"
+	"net/http/httptest"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -13,11 +16,26 @@ var _ = Describe("bundle", func() {
 
 	Context("download", func() {
 
-		It("should timeout, mark status as failed, then finish", func() {
+		FIt("should timeout, mark status as failed, then finish", func() {
+
+			proceed := make(chan bool)
+			failedOnce := false
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if failedOnce {
+					proceed <- true
+					time.Sleep(bundleDownloadTimeout)
+					w.Write([]byte("/bundles/longfail"))
+				} else {
+					failedOnce = true
+					time.Sleep(bundleDownloadTimeout)
+					w.WriteHeader(500)
+				}
+			}))
+			defer ts.Close()
 
 			deploymentID := "bundle_download_fail"
 
-			uri, err := url.Parse(testServer.URL)
+			uri, err := url.Parse(ts.URL)
 			Expect(err).ShouldNot(HaveOccurred())
 
 			uri.Path = "/bundles/longfail"
@@ -63,8 +81,7 @@ var _ = Describe("bundle", func() {
 
 			queueDownloadRequest(dep)
 
-			// give download time to timeout
-			time.Sleep(bundleDownloadTimeout + (100 * time.Millisecond))
+			<-proceed
 
 			// get error state deployment
 			deployments, err := getDeployments("WHERE id=$1", deploymentID)

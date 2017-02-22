@@ -18,10 +18,10 @@ import (
 )
 
 var (
-	bundleRetryDelay      time.Duration = time.Second
-	bundleDownloadTimeout time.Duration = 10 * time.Minute
-	downloadQueue                       = make(chan *DownloadRequest, downloadQueueSize)
-	workerQueue                         = make(chan chan *DownloadRequest, concurrentDownloads)
+	bundleRetryDelay      = time.Second
+	bundleDownloadTimeout = 10 * time.Minute
+	downloadQueue         = make(chan *DownloadRequest, downloadQueueSize)
+	workerQueue           = make(chan chan *DownloadRequest, concurrentDownloads)
 )
 
 // simple doubling back-off
@@ -55,42 +55,23 @@ func queueDownloadRequest(dep DataDeployment) {
 
 	retryIn := bundleRetryDelay
 	maxBackOff := 5 * time.Minute
+	timeoutAfter := time.Now().Add(bundleDownloadTimeout)
 	req := &DownloadRequest{
-		dep:         dep,
-		hashWriter:  hashWriter,
-		bundleFile:  getBundleFile(dep),
-		backoffFunc: createBackoff(retryIn, maxBackOff),
+		dep:          dep,
+		hashWriter:   hashWriter,
+		bundleFile:   getBundleFile(dep),
+		backoffFunc:  createBackoff(retryIn, maxBackOff),
+		timeoutAfter: timeoutAfter,
 	}
 	downloadQueue <- req
-
-	// timeout and mark deployment failed (but retries will continue)
-	timeout := time.NewTimer(bundleDownloadTimeout)
-	go func() {
-		<-timeout.C
-		log.Debugf("bundle download timeout. marking deployment %s failed. will keep retrying: %s", dep.ID, dep.BundleURI)
-		var errMessage string
-		if err != nil {
-			errMessage = fmt.Sprintf("bundle download failed: %s", err)
-		} else {
-			errMessage = "bundle download failed"
-		}
-		setDeploymentResults(apiDeploymentResults{
-			{
-				ID:        dep.ID,
-				Status:    RESPONSE_STATUS_FAIL,
-				ErrorCode: ERROR_CODE_TODO,
-				Message:   errMessage,
-			},
-		})
-	}()
-
 }
 
 type DownloadRequest struct {
-	dep         DataDeployment
-	hashWriter  hash.Hash
-	bundleFile  string
-	backoffFunc func()
+	dep          DataDeployment
+	hashWriter   hash.Hash
+	bundleFile   string
+	backoffFunc  func()
+	timeoutAfter time.Time
 }
 
 func (r *DownloadRequest) downloadBundle() {
@@ -103,6 +84,8 @@ func (r *DownloadRequest) downloadBundle() {
 		log.Debugf("never mind, deployment %s was deleted", dep.ID)
 		return
 	}
+
+	r.checkTimeout()
 
 	r.hashWriter.Reset()
 	tempFile, err := downloadFromURI(dep.BundleURI, r.hashWriter, dep.BundleChecksum)
@@ -135,6 +118,25 @@ func (r *DownloadRequest) downloadBundle() {
 
 	// send deployments to client
 	deploymentsChanged <- dep.ID
+}
+
+func (r *DownloadRequest) checkTimeout() {
+
+	if !r.timeoutAfter.IsZero() {
+		if time.Now().After(r.timeoutAfter) {
+			r.timeoutAfter = time.Time{}
+			log.Debugf("bundle download timeout. marking deployment %s failed. will keep retrying: %s",
+				r.dep.ID, r.dep.BundleURI)
+			setDeploymentResults(apiDeploymentResults{
+				{
+					ID:        r.dep.ID,
+					Status:    RESPONSE_STATUS_FAIL,
+					ErrorCode: ERROR_CODE_TODO,
+					Message:   "bundle download failed",
+				},
+			})
+		}
+	}
 }
 
 func getBundleFile(dep DataDeployment) string {
