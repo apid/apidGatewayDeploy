@@ -320,6 +320,7 @@ func transmitDeploymentResultsToServer(validResults apiDeploymentResults) error 
 		addHeaders(req)
 
 		resp, err := http.DefaultClient.Do(req)
+		defer resp.Body.Close();
 		if err != nil || resp.StatusCode != http.StatusOK {
 			if err != nil {
 				log.Errorf("failed to communicate with tracking service: %v", err)
@@ -328,11 +329,10 @@ func transmitDeploymentResultsToServer(validResults apiDeploymentResults) error 
 				log.Errorf("tracking service call failed to %s , code: %d, body: %s", uri.String(), resp.StatusCode, string(b))
 			}
 			backOffFunc()
-			resp.Body.Close()
 			continue
 		}
-
-		resp.Body.Close()
+		b, _ := ioutil.ReadAll(resp.Body)
+		log.Debugf("tracking service returned %s , code: %d, body: %s", uri.String(), resp.StatusCode, string(b))
 		return nil
 	}
 }
