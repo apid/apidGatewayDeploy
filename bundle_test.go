@@ -16,7 +16,7 @@ var _ = Describe("bundle", func() {
 
 	Context("download", func() {
 
-		FIt("should timeout, mark status as failed, then finish", func() {
+		It("should timeout, mark status as failed, then finish", func() {
 
 			proceed := make(chan bool)
 			failedOnce := false
