@@ -331,8 +331,6 @@ func transmitDeploymentResultsToServer(validResults apiDeploymentResults) error 
 			backOffFunc()
 			continue
 		}
-		b, _ := ioutil.ReadAll(resp.Body)
-		log.Debugf("tracking service returned %s , code: %d, body: %s", apiPath, resp.StatusCode, string(b))
 		return nil
 	}
 }
