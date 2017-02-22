@@ -314,7 +314,7 @@ func transmitDeploymentResultsToServer(validResults apiDeploymentResults) error 
 	}
 
 	for {
-		log.Debugf("transmitting deployment results to tracker: %s", string(resultJSON))
+		log.Debugf("transmitting deployment results to tracker by URL=%s data=%s",uri.String(), string(resultJSON))
 		req, err := http.NewRequest("PUT", uri.String(), bytes.NewReader(resultJSON))
 		req.Header.Add("Content-Type", "application/json")
 		addHeaders(req)
