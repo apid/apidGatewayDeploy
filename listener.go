@@ -3,10 +3,11 @@ package apiGatewayDeploy
 import (
 	"database/sql"
 	"encoding/json"
-	"github.com/30x/apid-core"
-	"github.com/apigee-labs/transicator/common"
 	"os"
 	"time"
+
+	"github.com/30x/apid-core"
+	"github.com/apigee-labs/transicator/common"
 )
 
 const (
@@ -96,7 +97,7 @@ func processSnapshot(snapshot *common.Snapshot) {
 				log.Panicf("unable to query database for unready deployments: %v", err)
 			}
 			for _, dep := range deployments {
-				go downloadBundle(dep)
+				queueDownloadRequest(dep)
 			}
 		}()
 	}
@@ -200,8 +201,7 @@ func addDeployment(tx *sql.Tx, row common.Row) (err error) {
 		return
 	}
 
-	// todo: limit # concurrent downloads?
-	go downloadBundle(d)
+	queueDownloadRequest(d)
 	return
 }
 

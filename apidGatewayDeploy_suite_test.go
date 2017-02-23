@@ -5,9 +5,11 @@ import (
 	. "github.com/onsi/gomega"
 
 	"encoding/hex"
+
 	"github.com/30x/apid-core"
 	"github.com/30x/apid-core/factory"
-	"io/ioutil"
+
+  "io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -49,10 +51,23 @@ var _ = BeforeSuite(func() {
 	bundleCleanupDelay = time.Millisecond
 	bundleRetryDelay = 10 * time.Millisecond
 	bundleDownloadTimeout = 50 * time.Millisecond
+	concurrentDownloads = 1
+	downloadQueueSize = 1
 
 	router := apid.API().Router()
 	// fake an unreliable bundle repo
 	count := 1
+	failedOnce := false
+	router.HandleFunc("/bundles/failonce", func(w http.ResponseWriter, req *http.Request) {
+		if failedOnce {
+			vars := apid.API().Vars(req)
+			w.Write([]byte("/bundles/" + vars["id"]))
+		} else {
+			failedOnce = true
+			w.WriteHeader(500)
+		}
+	}).Methods("GET")
+
 	router.HandleFunc("/bundles/{id}", func(w http.ResponseWriter, req *http.Request) {
 		count++
 		vars := apid.API().Vars(req)
