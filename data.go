@@ -3,8 +3,9 @@ package apiGatewayDeploy
 import (
 	"database/sql"
 	"fmt"
-	"github.com/30x/apid-core"
 	"sync"
+
+	"github.com/30x/apid-core"
 )
 
 var (
@@ -167,6 +168,7 @@ func getDeployments(where string, a ...interface{}) (deployments []DataDeploymen
 	if err != nil {
 		return
 	}
+	defer stmt.Close()
 	var rows *sql.Rows
 	rows, err = stmt.Query(a...)
 	if err != nil {
