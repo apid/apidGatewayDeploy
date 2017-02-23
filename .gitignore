@@ -4,3 +4,4 @@ coverage.txt
 vendor
 cmd/apidGatewayDeploy/apidGatewayDeploy
 *.lock
+/apidGatewayDeploy.iml

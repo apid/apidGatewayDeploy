@@ -1,15 +1,15 @@
 package apiGatewayDeploy
 
 import (
+	"bytes"
+	"encoding/json"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"encoding/json"
-	"io/ioutil"
 	"time"
-	"bytes"
 )
 
 var _ = Describe("api", func() {
@@ -155,7 +155,7 @@ var _ = Describe("api", func() {
 
 			time.Sleep(250 * time.Millisecond) // give api call above time to block
 			insertTestDeployment(testServer, deploymentID)
-			deploymentsChanged<- deploymentID
+			deploymentsChanged <- deploymentID
 		})
 
 		It("should get 304 after blocking if no new deployment", func() {
@@ -190,8 +190,7 @@ var _ = Describe("api", func() {
 			uri.Path = deploymentsEndpoint
 
 			deploymentResult := apiDeploymentResults{
-				apiDeploymentResult{
-				},
+				apiDeploymentResult{},
 			}
 			payload, err := json.Marshal(deploymentResult)
 			Expect(err).ShouldNot(HaveOccurred())
@@ -214,7 +213,7 @@ var _ = Describe("api", func() {
 
 			deploymentResult := apiDeploymentResults{
 				apiDeploymentResult{
-					ID: deploymentID,
+					ID:     deploymentID,
 					Status: RESPONSE_STATUS_SUCCESS,
 				},
 			}
@@ -241,7 +240,7 @@ var _ = Describe("api", func() {
 
 			deploymentResult := apiDeploymentResults{
 				apiDeploymentResult{
-					ID: deploymentID,
+					ID:     deploymentID,
 					Status: RESPONSE_STATUS_SUCCESS,
 				},
 			}
@@ -273,10 +272,10 @@ var _ = Describe("api", func() {
 
 			deploymentResults := apiDeploymentResults{
 				apiDeploymentResult{
-					ID: deploymentID,
-					Status: RESPONSE_STATUS_FAIL,
+					ID:        deploymentID,
+					Status:    RESPONSE_STATUS_FAIL,
 					ErrorCode: 100,
-					Message: "Some error message",
+					Message:   "Some error message",
 				},
 			}
 			payload, err := json.Marshal(deploymentResults)
@@ -304,10 +303,10 @@ var _ = Describe("api", func() {
 		It("should communicate status to tracking server", func() {
 			deploymentResults := apiDeploymentResults{
 				apiDeploymentResult{
-					ID: "deploymentID",
-					Status: RESPONSE_STATUS_FAIL,
+					ID:        "deploymentID",
+					Status:    RESPONSE_STATUS_FAIL,
 					ErrorCode: 100,
-					Message: "Some error message",
+					Message:   "Some error message",
 				},
 			}
 
@@ -334,8 +333,8 @@ func insertTestDeployment(testServer *httptest.Server, deploymentID string) {
 	uri.Path = "/bundles/1"
 	bundleUri := uri.String()
 	bundle := bundleConfigJson{
-		Name: uri.Path,
-		URI: bundleUri,
+		Name:         uri.Path,
+		URI:          bundleUri,
 		ChecksumType: "crc-32",
 	}
 	bundle.Checksum = testGetChecksum(bundle.ChecksumType, bundleUri)
@@ -346,23 +345,23 @@ func insertTestDeployment(testServer *httptest.Server, deploymentID string) {
 	Expect(err).ShouldNot(HaveOccurred())
 
 	dep := DataDeployment{
-		ID: deploymentID,
-		BundleConfigID: deploymentID,
-		ApidClusterID: deploymentID,
-		DataScopeID: deploymentID,
-		BundleConfigJSON: string(bundleJson),
-		ConfigJSON: string(bundleJson),
-		Created: "",
-		CreatedBy: "",
-		Updated: "",
-		UpdatedBy: "",
-		BundleName: deploymentID,
-		BundleURI: bundle.URI,
-		BundleChecksum: bundle.Checksum,
+		ID:                 deploymentID,
+		BundleConfigID:     deploymentID,
+		ApidClusterID:      deploymentID,
+		DataScopeID:        deploymentID,
+		BundleConfigJSON:   string(bundleJson),
+		ConfigJSON:         string(bundleJson),
+		Created:            "",
+		CreatedBy:          "",
+		Updated:            "",
+		UpdatedBy:          "",
+		BundleName:         deploymentID,
+		BundleURI:          bundle.URI,
+		BundleChecksum:     bundle.Checksum,
 		BundleChecksumType: bundle.ChecksumType,
-		LocalBundleURI: "x",
-		DeployStatus: "",
-		DeployErrorCode: 0,
+		LocalBundleURI:     "x",
+		DeployStatus:       "",
+		DeployErrorCode:    0,
 		DeployErrorMessage: "",
 	}
 

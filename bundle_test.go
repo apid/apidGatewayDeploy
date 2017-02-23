@@ -111,7 +111,7 @@ var _ = Describe("bundle", func() {
 				Name:         uri.Path,
 				URI:          bundleUri,
 				ChecksumType: "",
-				Checksum: "",
+				Checksum:     "",
 			}
 			bundleJson, err := json.Marshal(bundle)
 			Expect(err).ShouldNot(HaveOccurred())
