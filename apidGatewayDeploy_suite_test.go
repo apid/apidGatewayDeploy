@@ -5,16 +5,17 @@ import (
 	. "github.com/onsi/gomega"
 
 	"encoding/hex"
-	"io/ioutil"
+
+	"github.com/30x/apid-core"
+	"github.com/30x/apid-core/factory"
+
+  "io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"testing"
 	"time"
-
-	"github.com/30x/apid-core"
-	"github.com/30x/apid-core/factory"
 )
 
 var (

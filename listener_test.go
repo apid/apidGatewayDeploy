@@ -3,10 +3,10 @@ package apiGatewayDeploy
 import (
 	"encoding/json"
 	"github.com/30x/apid-core"
+	"github.com/apigee-labs/transicator/common"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"net/url"
-	"github.com/apigee-labs/transicator/common"
 )
 
 var _ = Describe("listener", func() {
@@ -23,8 +23,8 @@ var _ = Describe("listener", func() {
 			uri.Path = "/bundles/1"
 			bundleUri := uri.String()
 			bundle1 := bundleConfigJson{
-				Name: uri.Path,
-				URI: bundleUri,
+				Name:         uri.Path,
+				URI:          bundleUri,
 				ChecksumType: "crc-32",
 			}
 			bundle1.Checksum = testGetChecksum(bundle1.ChecksumType, bundleUri)
@@ -79,8 +79,8 @@ var _ = Describe("listener", func() {
 			uri.Path = "/bundles/1"
 			bundleUri := uri.String()
 			bundle := bundleConfigJson{
-				Name: uri.Path,
-				URI: bundleUri,
+				Name:         uri.Path,
+				URI:          bundleUri,
 				ChecksumType: "crc-32",
 			}
 			bundle.Checksum = testGetChecksum(bundle.ChecksumType, bundleUri)
@@ -95,8 +95,8 @@ var _ = Describe("listener", func() {
 				Changes: []common.Change{
 					{
 						Operation: common.Insert,
-						Table: DEPLOYMENT_TABLE,
-						NewRow: row,
+						Table:     DEPLOYMENT_TABLE,
+						NewRow:    row,
 					},
 				},
 			}
@@ -130,7 +130,7 @@ var _ = Describe("listener", func() {
 			tx, err := getDB().Begin()
 			Expect(err).ShouldNot(HaveOccurred())
 			dep := DataDeployment{
-				ID: deploymentID,
+				ID:             deploymentID,
 				LocalBundleURI: "whatever",
 			}
 			err = InsertDeployment(tx, dep)
@@ -145,8 +145,8 @@ var _ = Describe("listener", func() {
 				Changes: []common.Change{
 					{
 						Operation: common.Delete,
-						Table: DEPLOYMENT_TABLE,
-						OldRow: row,
+						Table:     DEPLOYMENT_TABLE,
+						OldRow:    row,
 					},
 				},
 			}
