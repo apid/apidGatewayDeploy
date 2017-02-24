@@ -188,8 +188,14 @@ func processChangeList(changes *common.ChangeList) {
 
 	err = tx.Commit()
 	if err != nil {
-		log.Panicf("Error committing Snapshot change: %v", err)
+		log.Panicf("Error processing ChangeList: %v", err)
 	}
+
+	if len(deploymentsToDelete) > 0 {
+		deploymentsChanged <- deploymentsToDelete[0].ID // arbitrary, the ID doesn't matter
+	}
+
+	log.Debug("ChangeList processed")
 
 	for _, dep := range deploymentsToInsert {
 		queueDownloadRequest(dep)

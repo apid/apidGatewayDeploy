@@ -144,8 +144,6 @@ func deleteDeployment(tx *sql.Tx, depID string) error {
 		return err
 	}
 
-	deploymentsChanged <- depID
-
 	log.Debugf("deleteDeployment %s succeeded", depID)
 	return err
 }
