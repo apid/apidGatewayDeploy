@@ -1,7 +1,6 @@
 package apiGatewayDeploy
 
 import (
-	"database/sql"
 	"encoding/json"
 	"os"
 	"time"
@@ -92,7 +91,7 @@ func processSnapshot(snapshot *common.Snapshot) {
 	}
 	defer tx.Rollback()
 
-	err = addDeployments(tx, deploymentsToInsert)
+	err = insertDeployments(tx, deploymentsToInsert)
 	if err != nil {
 		log.Panicf("Error processing Snapshot: %v", err)
 	}
@@ -103,6 +102,10 @@ func processSnapshot(snapshot *common.Snapshot) {
 	}
 
 	SetDB(db)
+
+	for _, dep := range deploymentsToInsert {
+		queueDownloadRequest(dep)
+	}
 
 	// transmit parsing errors back immediately
 	if len(errResults) > 0 {
@@ -178,7 +181,7 @@ func processChangeList(changes *common.ChangeList) {
 			log.Panicf("Error processing ChangeList: %v", err)
 		}
 	}
-	err = addDeployments(tx, deploymentsToInsert)
+	err = insertDeployments(tx, deploymentsToInsert)
 	if err != nil {
 		log.Panicf("Error processing ChangeList: %v", err)
 	}
@@ -186,6 +189,10 @@ func processChangeList(changes *common.ChangeList) {
 	err = tx.Commit()
 	if err != nil {
 		log.Panicf("Error committing Snapshot change: %v", err)
+	}
+
+	for _, dep := range deploymentsToInsert {
+		queueDownloadRequest(dep)
 	}
 
 	// clean up old bundles
@@ -228,19 +235,6 @@ func dataDeploymentFromRow(row common.Row) (d DataDeployment, err error) {
 	d.BundleChecksumType = bc.ChecksumType
 	d.BundleChecksum = bc.Checksum
 
-	return
-}
-
-func addDeployments(tx *sql.Tx, deps []DataDeployment) (err error) {
-
-	err = insertDeployments(tx, deps)
-	if err != nil {
-		return
-	}
-
-	for _, dep := range deps {
-		queueDownloadRequest(dep)
-	}
 	return
 }
 
