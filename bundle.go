@@ -143,7 +143,7 @@ func getBundleFile(dep DataDeployment) string {
 
 	// the content of the URI is unfortunately not guaranteed not to change, so I can't just use dep.BundleURI
 	// unfortunately, this also means that a bundle cache isn't especially relevant
-	fileName := dep.DataScopeID + dep.ID + dep.ID
+	fileName := dep.DataScopeID + "_" + dep.ID
 
 	return path.Join(bundlePath, base64.StdEncoding.EncodeToString([]byte(fileName)))
 }

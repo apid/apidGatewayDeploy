@@ -224,7 +224,7 @@ func sendDeployments(w http.ResponseWriter, dataDeps []DataDeployment, eTag stri
 
 	b, err := json.Marshal(apiDeps)
 	if err != nil {
-		log.Errorf("unable to marshal deployments: %s", err)
+		log.Errorf("unable to marshal deployments: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -328,7 +328,7 @@ func transmitDeploymentResultsToServer(validResults apiDeploymentResults) error 
 				log.Errorf("failed to communicate with tracking service: %v", err)
 			} else {
 				b, _ := ioutil.ReadAll(resp.Body)
-				log.Errorf("tracking service call failed to %s , code: %d, body: %s", apiPath, resp.StatusCode, string(b))
+				log.Errorf("tracking service call failed to %s, code: %d, body: %s", apiPath, resp.StatusCode, string(b))
 			}
 			backOffFunc()
 			continue

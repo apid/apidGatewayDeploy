@@ -2,11 +2,12 @@ package apiGatewayDeploy
 
 import (
 	"encoding/json"
+	"net/url"
+
 	"github.com/30x/apid-core"
 	"github.com/apigee-labs/transicator/common"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"net/url"
 )
 
 var _ = Describe("listener", func() {
