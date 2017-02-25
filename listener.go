@@ -160,6 +160,8 @@ func processChangeList(changes *common.ChangeList) {
 					DataScopeID: dataScopeID,
 				}
 				deploymentsToDelete = append(deploymentsToDelete, dep)
+			default:
+				log.Errorf("unexpected operation: %s", change.Operation)
 			}
 		}
 	}
