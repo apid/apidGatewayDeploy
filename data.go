@@ -86,8 +86,12 @@ func SetDB(db apid.DB) {
 }
 
 func InsertDeployment(tx *sql.Tx, dep DataDeployment) error {
+	return insertDeployments(tx, []DataDeployment{dep})
+}
 
-	log.Debugf("insertDeployment: %s", dep.ID)
+func insertDeployments(tx *sql.Tx, deps []DataDeployment) error {
+
+	log.Debugf("inserting %d deployments", len(deps))
 
 	stmt, err := tx.Prepare(`
 	INSERT INTO deployments
@@ -99,23 +103,27 @@ func InsertDeployment(tx *sql.Tx, dep DataDeployment) error {
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18);
 	`)
 	if err != nil {
-		log.Errorf("prepare insert into deployments %s failed: %v", dep.ID, err)
+		log.Errorf("prepare insert into deployments failed: %v", err)
 		return err
 	}
 	defer stmt.Close()
 
-	_, err = stmt.Exec(
-		dep.ID, dep.BundleConfigID, dep.ApidClusterID, dep.DataScopeID,
-		dep.BundleConfigJSON, dep.ConfigJSON, dep.Created, dep.CreatedBy,
-		dep.Updated, dep.UpdatedBy, dep.BundleName, dep.BundleURI,
-		dep.LocalBundleURI, dep.BundleChecksum, dep.BundleChecksumType, dep.DeployStatus,
-		dep.DeployErrorCode, dep.DeployErrorMessage)
-	if err != nil {
-		log.Errorf("insert into deployments %s failed: %v", dep.ID, err)
-		return err
+	for _, dep := range deps {
+		log.Debugf("insertDeployment: %s", dep.ID)
+
+		_, err = stmt.Exec(
+			dep.ID, dep.BundleConfigID, dep.ApidClusterID, dep.DataScopeID,
+			dep.BundleConfigJSON, dep.ConfigJSON, dep.Created, dep.CreatedBy,
+			dep.Updated, dep.UpdatedBy, dep.BundleName, dep.BundleURI,
+			dep.LocalBundleURI, dep.BundleChecksum, dep.BundleChecksumType, dep.DeployStatus,
+			dep.DeployErrorCode, dep.DeployErrorMessage)
+		if err != nil {
+			log.Errorf("insert into deployments %s failed: %v", dep.ID, err)
+			return err
+		}
 	}
 
-	log.Debugf("insert into deployments %s succeeded", dep.ID)
+	log.Debug("inserting deployments succeeded")
 	return err
 }
 
@@ -135,8 +143,6 @@ func deleteDeployment(tx *sql.Tx, depID string) error {
 		log.Errorf("delete from deployments %s failed: %v", depID, err)
 		return err
 	}
-
-	deploymentsChanged <- depID
 
 	log.Debugf("deleteDeployment %s succeeded", depID)
 	return err
@@ -260,9 +266,9 @@ func updateLocalBundleURI(depID, localBundleUri string) error {
 	return nil
 }
 
-func getLocalBundleURI(tx *sql.Tx, depID string) (localBundleUri string, err error) {
+func getLocalBundleURI(depID string) (localBundleUri string, err error) {
 
-	err = tx.QueryRow("SELECT local_bundle_uri FROM deployments WHERE id=$1;", depID).Scan(&localBundleUri)
+	err = getDB().QueryRow("SELECT local_bundle_uri FROM deployments WHERE id=$1;", depID).Scan(&localBundleUri)
 	if err == sql.ErrNoRows {
 		err = nil
 	}

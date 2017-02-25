@@ -1,10 +1,11 @@
 package apiGatewayDeploy
 
 import (
-	"database/sql"
 	"encoding/json"
 	"os"
 	"time"
+
+	"fmt"
 
 	"github.com/30x/apid-core"
 	"github.com/apigee-labs/transicator/common"
@@ -58,28 +59,41 @@ func processSnapshot(snapshot *common.Snapshot) {
 		log.Panicf("Unable to initialize database: %v", err)
 	}
 
-	tx, err := db.Begin()
-	if err != nil {
-		log.Panicf("Error starting transaction: %v", err)
+	var deploymentsToInsert []DataDeployment
+	var errResults apiDeploymentResults
+	for _, table := range snapshot.Tables {
+		switch table.Name {
+		case DEPLOYMENT_TABLE:
+			for _, row := range table.Rows {
+				dep, err := dataDeploymentFromRow(row)
+				if err == nil {
+					deploymentsToInsert = append(deploymentsToInsert, dep)
+				} else {
+					result := apiDeploymentResult{
+						ID:        dep.ID,
+						Status:    RESPONSE_STATUS_FAIL,
+						ErrorCode: ERROR_CODE_TODO,
+						Message:   fmt.Sprintf("unable to parse deployment: %v", err),
+					}
+					errResults = append(errResults, result)
+				}
+			}
+		}
 	}
 
 	// ensure that no new database updates are made on old database
 	dbMux.Lock()
 	defer dbMux.Unlock()
 
+	tx, err := db.Begin()
+	if err != nil {
+		log.Panicf("Error starting transaction: %v", err)
+	}
 	defer tx.Rollback()
-	for _, table := range snapshot.Tables {
-		var err error
-		switch table.Name {
-		case DEPLOYMENT_TABLE:
-			log.Debugf("Snapshot of %s with %d rows", table.Name, len(table.Rows))
-			for _, row := range table.Rows {
-				err = addDeployment(tx, row)
-			}
-		}
-		if err != nil {
-			log.Panicf("Error processing Snapshot: %v", err)
-		}
+
+	err = insertDeployments(tx, deploymentsToInsert)
+	if err != nil {
+		log.Panicf("Error processing Snapshot: %v", err)
 	}
 
 	err = tx.Commit()
@@ -88,6 +102,15 @@ func processSnapshot(snapshot *common.Snapshot) {
 	}
 
 	SetDB(db)
+
+	for _, dep := range deploymentsToInsert {
+		queueDownloadRequest(dep)
+	}
+
+	// transmit parsing errors back immediately
+	if len(errResults) > 0 {
+		go transmitDeploymentResultsToServer(errResults)
+	}
 
 	// if no tables, this a startup event for an existing DB, start bundle downloads that didn't finish
 	if len(snapshot.Tables) == 0 {
@@ -107,54 +130,89 @@ func processSnapshot(snapshot *common.Snapshot) {
 
 func processChangeList(changes *common.ChangeList) {
 
+	// gather deleted bundle info
+	var deploymentsToInsert, deploymentsToDelete []DataDeployment
+	var errResults apiDeploymentResults
+	for _, change := range changes.Changes {
+		switch change.Table {
+		case DEPLOYMENT_TABLE:
+			switch change.Operation {
+			case common.Insert:
+				dep, err := dataDeploymentFromRow(change.NewRow)
+				if err == nil {
+					deploymentsToInsert = append(deploymentsToInsert, dep)
+				} else {
+					result := apiDeploymentResult{
+						ID:        dep.ID,
+						Status:    RESPONSE_STATUS_FAIL,
+						ErrorCode: ERROR_CODE_TODO,
+						Message:   fmt.Sprintf("unable to parse deployment: %v", err),
+					}
+					errResults = append(errResults, result)
+				}
+			case common.Delete:
+				var id, dataScopeID string
+				change.OldRow.Get("id", &id)
+				change.OldRow.Get("data_scope_id", &dataScopeID)
+				// only need these two fields to delete and determine bundle file
+				dep := DataDeployment{
+					ID:          id,
+					DataScopeID: dataScopeID,
+				}
+				deploymentsToDelete = append(deploymentsToDelete, dep)
+			default:
+				log.Errorf("unexpected operation: %s", change.Operation)
+			}
+		}
+	}
+
+	// transmit parsing errors back immediately
+	if len(errResults) > 0 {
+		go transmitDeploymentResultsToServer(errResults)
+	}
+
 	tx, err := getDB().Begin()
 	if err != nil {
 		log.Panicf("Error processing ChangeList: %v", err)
 	}
 	defer tx.Rollback()
 
-	// ensure bundle download and delete updates aren't attempted while in process
-	dbMux.Lock()
-	defer dbMux.Unlock()
-
-	var bundlesToDelete []string
-	for _, change := range changes.Changes {
-		var err error
-		switch change.Table {
-		case DEPLOYMENT_TABLE:
-			switch change.Operation {
-			case common.Insert:
-				err = addDeployment(tx, change.NewRow)
-			case common.Delete:
-				var id string
-				change.OldRow.Get("id", &id)
-				localBundleUri, err := getLocalBundleURI(tx, id)
-				if err == nil {
-					bundlesToDelete = append(bundlesToDelete, localBundleUri)
-					err = deleteDeployment(tx, id)
-				}
-			default:
-				log.Errorf("unexpected operation: %s", change.Operation)
-			}
-		}
+	for _, dep := range deploymentsToDelete {
+		err = deleteDeployment(tx, dep.ID)
 		if err != nil {
 			log.Panicf("Error processing ChangeList: %v", err)
 		}
 	}
+	err = insertDeployments(tx, deploymentsToInsert)
+	if err != nil {
+		log.Panicf("Error processing ChangeList: %v", err)
+	}
+
 	err = tx.Commit()
 	if err != nil {
 		log.Panicf("Error processing ChangeList: %v", err)
 	}
 
+	if len(deploymentsToDelete) > 0 {
+		deploymentsChanged <- deploymentsToDelete[0].ID // arbitrary, the ID doesn't matter
+	}
+
+	log.Debug("ChangeList processed")
+
+	for _, dep := range deploymentsToInsert {
+		queueDownloadRequest(dep)
+	}
+
 	// clean up old bundles
-	if len(bundlesToDelete) > 0 {
-		log.Debugf("will delete %d old bundles", len(bundlesToDelete))
+	if len(deploymentsToDelete) > 0 {
+		log.Debugf("will delete %d old bundles", len(deploymentsToDelete))
 		go func() {
 			// give clients a minute to avoid conflicts
 			time.Sleep(bundleCleanupDelay)
-			for _, b := range bundlesToDelete {
-				log.Debugf("removing old bundle: %v", b)
-				safeDelete(b)
+			for _, dep := range deploymentsToDelete {
+				bundleFile := getBundleFile(dep)
+				log.Debugf("removing old bundle: %v", bundleFile)
+				safeDelete(bundleFile)
 			}
 		}()
 	}
@@ -185,23 +243,6 @@ func dataDeploymentFromRow(row common.Row) (d DataDeployment, err error) {
 	d.BundleChecksumType = bc.ChecksumType
 	d.BundleChecksum = bc.Checksum
 
-	return
-}
-
-func addDeployment(tx *sql.Tx, row common.Row) (err error) {
-
-	var d DataDeployment
-	d, err = dataDeploymentFromRow(row)
-	if err != nil {
-		return
-	}
-
-	err = InsertDeployment(tx, d)
-	if err != nil {
-		return
-	}
-
-	queueDownloadRequest(d)
 	return
 }
 
