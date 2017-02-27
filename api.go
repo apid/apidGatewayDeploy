@@ -303,7 +303,7 @@ func transmitDeploymentResultsToServer(validResults apiDeploymentResults) error 
 		log.Errorf("unable to parse apiServerBaseURI %s: %v", apiServerBaseURI.String(), err)
 		return err
 	}
-	apiPath := fmt.Sprintf("%s/clusters/%s/apids/%s/deployments", apiServerBaseURI.String(), apidClusterID, apidInstanceID)
+	apiPath := fmt.Sprintf("%s/apidtracker/clusters/%s/apids/%s/deployments", apiServerBaseURI.String(), apidClusterID, apidInstanceID)
 
 	resultJSON, err := json.Marshal(validResults)
 	if err != nil {

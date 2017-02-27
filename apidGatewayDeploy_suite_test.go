@@ -83,7 +83,7 @@ var _ = BeforeSuite(func() {
 	}).Methods("GET")
 
 	// fake an unreliable APID tracker
-	router.HandleFunc("/clusters/{clusterID}/apids/{instanceID}/deployments",
+	router.HandleFunc("/apidtracker/clusters/{clusterID}/apids/{instanceID}/deployments",
 		func(w http.ResponseWriter, req *http.Request) {
 			count++
 			if count%2 == 0 {
