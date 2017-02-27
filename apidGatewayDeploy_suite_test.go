@@ -50,7 +50,7 @@ var _ = BeforeSuite(func() {
 	debounceDuration = time.Millisecond
 	bundleCleanupDelay = time.Millisecond
 	bundleRetryDelay = 10 * time.Millisecond
-	bundleDownloadTimeout = 50 * time.Millisecond
+	markDeploymentFailedAfter = 50 * time.Millisecond
 	concurrentDownloads = 1
 	downloadQueueSize = 1
 
@@ -76,7 +76,7 @@ var _ = BeforeSuite(func() {
 			return
 		}
 		if vars["id"] == "longfail" {
-			time.Sleep(bundleDownloadTimeout + (250 * time.Millisecond))
+			time.Sleep(markDeploymentFailedAfter + (250 * time.Millisecond))
 		}
 		w.Write([]byte("/bundles/" + vars["id"]))
 

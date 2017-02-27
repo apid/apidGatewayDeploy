@@ -66,6 +66,73 @@ var _ = Describe("listener", func() {
 
 			close(done)
 		})
+
+		It("should set DB and process unready on startup event", func(done Done) {
+
+			deploymentID := "startup_test"
+
+			uri, err := url.Parse(testServer.URL)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			uri.Path = "/bundles/1"
+			bundleUri := uri.String()
+			bundle := bundleConfigJson{
+				Name:         uri.Path,
+				URI:          bundleUri,
+				ChecksumType: "crc-32",
+			}
+			bundle.Checksum = testGetChecksum(bundle.ChecksumType, bundleUri)
+
+			dep := DataDeployment{
+				ID:                 deploymentID,
+				DataScopeID:        deploymentID,
+				BundleURI:          bundle.URI,
+				BundleChecksum:     bundle.Checksum,
+				BundleChecksumType: bundle.ChecksumType,
+			}
+
+			// init without info == startup on existing DB
+			var snapshot = common.Snapshot{
+				SnapshotInfo: "test",
+				Tables:       []common.Table{},
+			}
+
+			db, err := data.DBVersion(snapshot.SnapshotInfo)
+			if err != nil {
+				log.Panicf("Unable to access database: %v", err)
+			}
+
+			err = InitDB(db)
+			if err != nil {
+				log.Panicf("Unable to initialize database: %v", err)
+			}
+
+			tx, err := db.Begin()
+			Expect(err).ShouldNot(HaveOccurred())
+
+			err = InsertDeployment(tx, dep)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			err = tx.Commit()
+			Expect(err).ShouldNot(HaveOccurred())
+
+			var listener = make(chan string)
+			addSubscriber <- listener
+
+			apid.Events().Emit(APIGEE_SYNC_EVENT, &snapshot)
+
+			id := <-listener
+			Expect(id).To(Equal(deploymentID))
+
+			deployments, err := getReadyDeployments()
+			Expect(err).ShouldNot(HaveOccurred())
+
+			Expect(len(deployments)).To(Equal(1))
+			d := deployments[0]
+
+			Expect(d.ID).To(Equal(deploymentID))
+			close(done)
+		})
 	})
 
 	Context("ApigeeSync change event", func() {

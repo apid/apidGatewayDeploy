@@ -16,18 +16,73 @@ var _ = Describe("bundle", func() {
 
 	Context("download", func() {
 
-		It("should timeout, mark status as failed, then finish", func() {
+		It("should timeout connection and retry", func() {
+			defer func() {
+				bundleDownloadConnTimeout = time.Second
+			}()
+			bundleDownloadConnTimeout = 100 * time.Millisecond
+			firstTime := true
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if firstTime {
+					firstTime = false
+					time.Sleep(1 * time.Second)
+					w.WriteHeader(500)
+				} else {
+					//proceed <- true
+					w.Write([]byte("/bundles/longfail"))
+				}
+			}))
+			defer ts.Close()
+
+			uri, err := url.Parse(ts.URL)
+			Expect(err).ShouldNot(HaveOccurred())
+			uri.Path = "/bundles/longfail"
+
+			tx, err := getDB().Begin()
+			Expect(err).ShouldNot(HaveOccurred())
+
+			deploymentID := "bundle_download_fail"
+			dep := DataDeployment{
+				ID:                 deploymentID,
+				DataScopeID:        deploymentID,
+				BundleURI:          uri.String(),
+				BundleChecksum:     testGetChecksum("crc-32", uri.String()),
+				BundleChecksumType: "crc-32",
+			}
+
+			err = InsertDeployment(tx, dep)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			err = tx.Commit()
+			Expect(err).ShouldNot(HaveOccurred())
+
+			queueDownloadRequest(dep)
+
+			var listener = make(chan string)
+			addSubscriber <- listener
+			<-listener
+
+			getReadyDeployments()
+			deployments, err := getReadyDeployments()
+			Expect(err).ShouldNot(HaveOccurred())
+
+			Expect(len(deployments)).To(Equal(1))
+			d := deployments[0]
+			Expect(d.ID).To(Equal(deploymentID))
+		})
+
+		It("should timeout deployment, mark status as failed, then finish", func() {
 
 			proceed := make(chan bool)
 			failedOnce := false
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if failedOnce {
 					proceed <- true
-					time.Sleep(bundleDownloadTimeout)
+					time.Sleep(markDeploymentFailedAfter)
 					w.Write([]byte("/bundles/longfail"))
 				} else {
 					failedOnce = true
-					time.Sleep(bundleDownloadTimeout)
+					time.Sleep(markDeploymentFailedAfter)
 					w.WriteHeader(500)
 				}
 			}))
@@ -234,7 +289,7 @@ var _ = Describe("bundle", func() {
 			queueDownloadRequest(dep)
 
 			// give download time to finish
-			time.Sleep(bundleDownloadTimeout + (100 * time.Millisecond))
+			time.Sleep(markDeploymentFailedAfter + (100 * time.Millisecond))
 
 			deployments, err := getReadyDeployments()
 			Expect(err).ShouldNot(HaveOccurred())
