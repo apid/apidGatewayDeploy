@@ -23,9 +23,13 @@ Default: "bundles"
 Duration between deleting a deployment and deleting it's bundles on disk. 
 Default: "1s"
 
-#### gatewaydeploy_bundle_download_timeout
-Duration before bundle download marks deployment as failed (will continue retries regardless). 
-Default: "1m"
+#### gatewaydeploy_download_connection_timeout
+Duration before a bundle download connection terminates  
+Default: "5m"
+
+#### gatewaydeploy_deployment_timeout
+Duration before bundle download marks deployment as failed (will continue download retries regardless). 
+Default: "10m"
 
 #### gatewaydeploy_bundle_dir
 Relative location from local_storage_path in which to store local bundle files.

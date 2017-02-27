@@ -18,10 +18,11 @@ import (
 )
 
 var (
-	bundleRetryDelay      = time.Second
-	bundleDownloadTimeout = 10 * time.Minute
-	downloadQueue         = make(chan *DownloadRequest, downloadQueueSize)
-	workerQueue           = make(chan chan *DownloadRequest, concurrentDownloads)
+	markDeploymentFailedAfter time.Duration
+	bundleDownloadConnTimeout time.Duration
+	bundleRetryDelay          = time.Second
+	downloadQueue             = make(chan *DownloadRequest, downloadQueueSize)
+	workerQueue               = make(chan chan *DownloadRequest, concurrentDownloads)
 )
 
 // simple doubling back-off
@@ -55,13 +56,13 @@ func queueDownloadRequest(dep DataDeployment) {
 
 	retryIn := bundleRetryDelay
 	maxBackOff := 5 * time.Minute
-	timeoutAfter := time.Now().Add(bundleDownloadTimeout)
+	markFailedAt := time.Now().Add(markDeploymentFailedAfter)
 	req := &DownloadRequest{
 		dep:          dep,
 		hashWriter:   hashWriter,
 		bundleFile:   getBundleFile(dep),
 		backoffFunc:  createBackoff(retryIn, maxBackOff),
-		timeoutAfter: timeoutAfter,
+		markFailedAt: markFailedAt,
 	}
 	downloadQueue <- req
 }
@@ -71,7 +72,7 @@ type DownloadRequest struct {
 	hashWriter   hash.Hash
 	bundleFile   string
 	backoffFunc  func()
-	timeoutAfter time.Time
+	markFailedAt time.Time
 }
 
 func (r *DownloadRequest) downloadBundle() {
@@ -122,9 +123,9 @@ func (r *DownloadRequest) downloadBundle() {
 
 func (r *DownloadRequest) checkTimeout() {
 
-	if !r.timeoutAfter.IsZero() {
-		if time.Now().After(r.timeoutAfter) {
-			r.timeoutAfter = time.Time{}
+	if !r.markFailedAt.IsZero() {
+		if time.Now().After(r.markFailedAt) {
+			r.markFailedAt = time.Time{}
 			log.Debugf("bundle download timeout. marking deployment %s failed. will keep retrying: %s",
 				r.dep.ID, r.dep.BundleURI)
 			setDeploymentResults(apiDeploymentResults{
@@ -209,7 +210,10 @@ func getURIFileReader(uriString string) (io.ReadCloser, error) {
 	}
 
 	// GET the contents at uriString
-	res, err := http.Get(uriString)
+	client := http.Client{
+		Timeout: bundleDownloadConnTimeout,
+	}
+	res, err := client.Get(uriString)
 	if err != nil {
 		return nil, err
 	}

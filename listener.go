@@ -119,6 +119,7 @@ func processSnapshot(snapshot *common.Snapshot) {
 			if err != nil {
 				log.Panicf("unable to query database for unready deployments: %v", err)
 			}
+			log.Debugf("Queuing %d deployments for bundle download", len(deployments))
 			for _, dep := range deployments {
 				queueDownloadRequest(dep)
 			}

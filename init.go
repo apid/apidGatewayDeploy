@@ -14,7 +14,8 @@ const (
 	configBundleDirKey          = "gatewaydeploy_bundle_dir"
 	configDebounceDuration      = "gatewaydeploy_debounce_duration"
 	configBundleCleanupDelay    = "gatewaydeploy_bundle_cleanup_delay"
-	configBundleDownloadTimeout = "gatewaydeploy_bundle_download_timeout"
+	configMarkDeployFailedAfter = "gatewaydeploy_deployment_timeout"
+	configDownloadConnTimeout   = "gatewaydeploy_download_connection_timeout"
 	configApiServerBaseURI      = "apigeesync_proxy_server_base"
 	configApidInstanceID        = "apigeesync_apid_instance_id"
 	configApidClusterID         = "apigeesync_cluster_id"
@@ -69,7 +70,8 @@ func initPlugin(s apid.Services) (apid.PluginData, error) {
 	config.SetDefault(configBundleDirKey, "bundles")
 	config.SetDefault(configDebounceDuration, time.Second)
 	config.SetDefault(configBundleCleanupDelay, time.Minute)
-	config.SetDefault(configBundleDownloadTimeout, 5*time.Minute)
+	config.SetDefault(configMarkDeployFailedAfter, 10*time.Minute)
+	config.SetDefault(configDownloadConnTimeout, 5*time.Minute)
 	config.SetDefault(configConcurrentDownloads, 15)
 	config.SetDefault(configDownloadQueueSize, 2000)
 
@@ -83,9 +85,14 @@ func initPlugin(s apid.Services) (apid.PluginData, error) {
 		return pluginData, fmt.Errorf("%s must be a positive duration", configBundleCleanupDelay)
 	}
 
-	bundleDownloadTimeout = config.GetDuration(configBundleDownloadTimeout)
-	if bundleDownloadTimeout < time.Millisecond {
-		return pluginData, fmt.Errorf("%s must be a positive duration", configBundleDownloadTimeout)
+	markDeploymentFailedAfter = config.GetDuration(configMarkDeployFailedAfter)
+	if markDeploymentFailedAfter < time.Millisecond {
+		return pluginData, fmt.Errorf("%s must be a positive duration", configMarkDeployFailedAfter)
+	}
+
+	bundleDownloadConnTimeout = config.GetDuration(configDownloadConnTimeout)
+	if bundleDownloadConnTimeout < time.Millisecond {
+		return pluginData, fmt.Errorf("%s must be a positive duration", configDownloadConnTimeout)
 	}
 
 	data = services.Data()
