@@ -112,21 +112,49 @@ func processSnapshot(snapshot *common.Snapshot) {
 		go transmitDeploymentResultsToServer(errResults)
 	}
 
-	// if no tables, this a startup event for an existing DB, start bundle downloads that didn't finish
+	// if no tables, this a startup event for an existing DB
 	if len(snapshot.Tables) == 0 {
-		go func() {
-			deployments, err := getUnreadyDeployments()
-			if err != nil {
-				log.Panicf("unable to query database for unready deployments: %v", err)
-			}
-			log.Debugf("Queuing %d deployments for bundle download", len(deployments))
-			for _, dep := range deployments {
-				queueDownloadRequest(dep)
-			}
-		}()
+		startupOnExistingDatabase()
 	}
 
 	log.Debug("Snapshot processed")
+}
+
+func startupOnExistingDatabase() {
+	// ensure all deployment statuses have been sent to tracker
+	go func() {
+		deployments, err := getDeployments("WHERE deploy_status != $1", "")
+		if err != nil {
+			log.Panicf("unable to query database for ready deployments: %v", err)
+		}
+		log.Debugf("Queuing %d deployments for bundle download", len(deployments))
+
+		var results apiDeploymentResults
+		for _, dep := range deployments {
+			result := apiDeploymentResult{
+				ID:        dep.ID,
+				Status:    dep.DeployStatus,
+				ErrorCode: dep.DeployErrorCode,
+				Message:   dep.DeployErrorMessage,
+			}
+			results = append(results, result)
+		}
+		if len(results) > 0 {
+			transmitDeploymentResultsToServer(results)
+		}
+	}()
+
+	// start bundle downloads that didn't finish
+	go func() {
+		deployments, err := getUnreadyDeployments()
+		if err != nil {
+			log.Panicf("unable to query database for unready deployments: %v", err)
+		}
+		log.Debugf("Queuing %d deployments for bundle download", len(deployments))
+		for _, dep := range deployments {
+			queueDownloadRequest(dep)
+		}
+	}()
 }
 
 func processChangeList(changes *common.ChangeList) {
