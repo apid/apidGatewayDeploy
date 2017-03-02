@@ -9,7 +9,7 @@ import (
 	"github.com/30x/apid-core"
 	"github.com/30x/apid-core/factory"
 
-  "io/ioutil"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -99,9 +99,6 @@ var _ = BeforeSuite(func() {
 
 		}).Methods("PUT")
 	testServer = httptest.NewServer(router)
-
-	apiServerBaseURI, err = url.Parse(testServer.URL)
-	Expect(err).NotTo(HaveOccurred())
 })
 
 var _ = AfterSuite(func() {
@@ -113,7 +110,11 @@ var _ = AfterSuite(func() {
 })
 
 var _ = BeforeEach(func() {
-	_, err := getDB().Exec("DELETE FROM deployments")
+	var err error
+	apiServerBaseURI, err = url.Parse(testServer.URL)
+	Expect(err).NotTo(HaveOccurred())
+
+	_, err = getDB().Exec("DELETE FROM deployments")
 	Expect(err).ShouldNot(HaveOccurred())
 	_, err = getDB().Exec("UPDATE etag SET value=1")
 })

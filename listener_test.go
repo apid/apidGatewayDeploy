@@ -4,6 +4,10 @@ import (
 	"encoding/json"
 	"net/url"
 
+	"net/http/httptest"
+
+	"net/http"
+
 	"github.com/30x/apid-core"
 	"github.com/apigee-labs/transicator/common"
 	. "github.com/onsi/ginkgo"
@@ -67,7 +71,7 @@ var _ = Describe("listener", func() {
 			close(done)
 		})
 
-		It("should set DB and process unready on startup event", func(done Done) {
+		It("should process unready on existing db startup event", func(done Done) {
 
 			deploymentID := "startup_test"
 
@@ -132,6 +136,90 @@ var _ = Describe("listener", func() {
 
 			Expect(d.ID).To(Equal(deploymentID))
 			close(done)
+		})
+
+		It("should send deployment statuses on existing db startup event", func(done Done) {
+
+			successDep := DataDeployment{
+				ID:                 "success",
+				LocalBundleURI:     "x",
+				DeployStatus:       RESPONSE_STATUS_SUCCESS,
+				DeployErrorCode:    1,
+				DeployErrorMessage: "message",
+			}
+
+			failDep := DataDeployment{
+				ID:                 "fail",
+				LocalBundleURI:     "x",
+				DeployStatus:       RESPONSE_STATUS_FAIL,
+				DeployErrorCode:    1,
+				DeployErrorMessage: "message",
+			}
+
+			blankDep := DataDeployment{
+				ID:             "blank",
+				LocalBundleURI: "x",
+			}
+
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				defer GinkgoRecover()
+
+				var results apiDeploymentResults
+				err := json.NewDecoder(r.Body).Decode(&results)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(results).To(HaveLen(2))
+
+				Expect(results).To(ContainElement(apiDeploymentResult{
+					ID:        successDep.ID,
+					Status:    successDep.DeployStatus,
+					ErrorCode: successDep.DeployErrorCode,
+					Message:   successDep.DeployErrorMessage,
+				}))
+				Expect(results).To(ContainElement(apiDeploymentResult{
+					ID:        failDep.ID,
+					Status:    failDep.DeployStatus,
+					ErrorCode: failDep.DeployErrorCode,
+					Message:   failDep.DeployErrorMessage,
+				}))
+
+				close(done)
+			}))
+
+			var err error
+			apiServerBaseURI, err = url.Parse(ts.URL)
+			Expect(err).NotTo(HaveOccurred())
+
+			// init without info == startup on existing DB
+			var snapshot = common.Snapshot{
+				SnapshotInfo: "test",
+				Tables:       []common.Table{},
+			}
+
+			db, err := data.DBVersion(snapshot.SnapshotInfo)
+			if err != nil {
+				log.Panicf("Unable to access database: %v", err)
+			}
+
+			err = InitDB(db)
+			if err != nil {
+				log.Panicf("Unable to initialize database: %v", err)
+			}
+
+			tx, err := db.Begin()
+			Expect(err).ShouldNot(HaveOccurred())
+
+			err = InsertDeployment(tx, successDep)
+			Expect(err).ShouldNot(HaveOccurred())
+			err = InsertDeployment(tx, failDep)
+			Expect(err).ShouldNot(HaveOccurred())
+			err = InsertDeployment(tx, blankDep)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			err = tx.Commit()
+			Expect(err).ShouldNot(HaveOccurred())
+
+			apid.Events().Emit(APIGEE_SYNC_EVENT, &snapshot)
 		})
 	})
 
