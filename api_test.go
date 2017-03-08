@@ -3,20 +3,21 @@ package apiGatewayDeploy
 import (
 	"bytes"
 	"encoding/json"
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"time"
+
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("api", func() {
 
 	Context("GET /deployments", func() {
 
-		It("should get an empty array if no deployments", func() {
+		It("should get empty set if no deployments", func() {
 
 			uri, err := url.Parse(testServer.URL)
 			uri.Path = deploymentsEndpoint
@@ -24,7 +25,16 @@ var _ = Describe("api", func() {
 			res, err := http.Get(uri.String())
 			Expect(err).ShouldNot(HaveOccurred())
 			defer res.Body.Close()
-			Expect(res.StatusCode).Should(Equal(http.StatusNotFound))
+
+			Expect(res.StatusCode).Should(Equal(http.StatusOK))
+
+			var depRes ApiDeploymentResponse
+			body, err := ioutil.ReadAll(res.Body)
+			Expect(err).ShouldNot(HaveOccurred())
+			json.Unmarshal(body, &depRes)
+
+			Expect(len(depRes)).To(Equal(0))
+			Expect(string(body)).Should(Equal("[]"))
 		})
 
 		It("should debounce requests", func() {
@@ -49,6 +59,8 @@ var _ = Describe("api", func() {
 			res, err := http.Get(uri.String())
 			Expect(err).ShouldNot(HaveOccurred())
 			defer res.Body.Close()
+
+			Expect(res.StatusCode).Should(Equal(http.StatusOK))
 
 			var depRes ApiDeploymentResponse
 			body, err := ioutil.ReadAll(res.Body)
@@ -103,14 +115,21 @@ var _ = Describe("api", func() {
 			query := uri.Query()
 			query.Add("block", "1")
 			uri.RawQuery = query.Encode()
+
 			res, err := http.Get(uri.String())
 			Expect(err).ShouldNot(HaveOccurred())
 			defer res.Body.Close()
 
+			var depRes ApiDeploymentResponse
+			body, err := ioutil.ReadAll(res.Body)
+			Expect(err).ShouldNot(HaveOccurred())
+			json.Unmarshal(body, &depRes)
+
 			Expect(res.StatusCode).Should(Equal(http.StatusOK))
+			Expect(string(body)).Should(Equal("[]"))
 		})
 
-		It("should get new deployment after blocking", func(done Done) {
+		It("should get new deployment set after blocking", func(done Done) {
 
 			deploymentID := "api_get_current_blocking"
 			insertTestDeployment(testServer, deploymentID)
@@ -301,6 +320,7 @@ var _ = Describe("api", func() {
 		})
 
 		It("should communicate status to tracking server", func() {
+
 			deploymentResults := apiDeploymentResults{
 				apiDeploymentResult{
 					ID:        "deploymentID",

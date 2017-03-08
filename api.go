@@ -175,12 +175,6 @@ func apiGetCurrentDeployments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// send not found if no timeout
-	if len(deployments) == 0 && timeout == 0 {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-
 	// send results if different eTag
 	if eTag != ifNoneMatch {
 		sendDeployments(w, deployments, eTag)
@@ -198,14 +192,14 @@ func apiGetCurrentDeployments(w http.ResponseWriter, r *http.Request) {
 		if ifNoneMatch != "" {
 			w.WriteHeader(http.StatusNotModified)
 		} else {
-			w.WriteHeader(http.StatusNotFound)
+			sendDeployments(w, deployments, eTag)
 		}
 	}
 }
 
 func sendDeployments(w http.ResponseWriter, dataDeps []DataDeployment, eTag string) {
 
-	var apiDeps ApiDeploymentResponse
+	apiDeps := ApiDeploymentResponse{}
 
 	for _, d := range dataDeps {
 		apiDeps = append(apiDeps, ApiDeployment{
@@ -229,7 +223,7 @@ func sendDeployments(w http.ResponseWriter, dataDeps []DataDeployment, eTag stri
 		return
 	}
 
-	log.Debugf("sending deployment %s: %s", eTag, b)
+	log.Debugf("sending deployments %s: %s", eTag, b)
 	w.Header().Set("ETag", eTag)
 	w.Write(b)
 }
