@@ -149,7 +149,7 @@ var _ = Describe("bundle", func() {
 					{
 						ID:        deploymentID,
 						Status:    RESPONSE_STATUS_FAIL,
-						ErrorCode: TRACKER_ERR_BUNDLE_TIMEOUT,
+						ErrorCode: TRACKER_ERR_BUNDLE_DOWNLOAD_TIMEOUT,
 						Message:   "bundle download failed",
 					},
 				}
@@ -174,7 +174,7 @@ var _ = Describe("bundle", func() {
 
 			Expect(d.ID).To(Equal(deploymentID))
 			Expect(d.DeployStatus).To(Equal(RESPONSE_STATUS_FAIL))
-			Expect(d.DeployErrorCode).To(Equal(TRACKER_ERR_BUNDLE_TIMEOUT))
+			Expect(d.DeployErrorCode).To(Equal(TRACKER_ERR_BUNDLE_DOWNLOAD_TIMEOUT))
 			Expect(d.DeployErrorMessage).ToNot(BeEmpty())
 			Expect(d.LocalBundleURI).To(BeEmpty())
 
@@ -194,7 +194,7 @@ var _ = Describe("bundle", func() {
 
 			Expect(d.ID).To(Equal(deploymentID))
 			Expect(d.DeployStatus).To(Equal(RESPONSE_STATUS_FAIL))
-			Expect(d.DeployErrorCode).To(Equal(TRACKER_ERR_BUNDLE_TIMEOUT))
+			Expect(d.DeployErrorCode).To(Equal(TRACKER_ERR_BUNDLE_DOWNLOAD_TIMEOUT))
 			Expect(d.DeployErrorMessage).ToNot(BeEmpty())
 			Expect(d.LocalBundleURI).To(BeAnExistingFile())
 		})

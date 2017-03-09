@@ -20,15 +20,15 @@ const (
 )
 
 const (
-	TRACKER_ERR_BUNDLE_TIMEOUT = iota
-	TRACKER_ERR_PARSE_FAILED
-	TRACKER_ERR_INVALID_CHECKSUM
+	TRACKER_ERR_BUNDLE_DOWNLOAD_TIMEOUT = iota + 1
+	TRACKER_ERR_BUNDLE_BAD_CHECKSUM
+	TRACKER_ERR_DEPLOYMENT_BAD_JSON
 )
 
 const (
-	API_ERR_BAD_BLOCK = iota
+	API_ERR_BAD_BLOCK = iota + 1
 	API_ERR_BAD_JSON
-	API_ERR_INVALID_CONTENT
+	API_ERR_BAD_CONTENT
 	API_ERR_INTERNAL
 )
 
@@ -280,7 +280,7 @@ func apiSetDeploymentResults(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if errs.Len() > 0 {
-		writeError(w, http.StatusBadRequest, API_ERR_INVALID_CONTENT, errs.String())
+		writeError(w, http.StatusBadRequest, API_ERR_BAD_CONTENT, errs.String())
 		return
 	}
 

@@ -70,7 +70,7 @@ func initPlugin(s apid.Services) (apid.PluginData, error) {
 	config.SetDefault(configBundleDirKey, "bundles")
 	config.SetDefault(configDebounceDuration, time.Second)
 	config.SetDefault(configBundleCleanupDelay, time.Minute)
-	config.SetDefault(configMarkDeployFailedAfter, 10*time.Minute)
+	config.SetDefault(configMarkDeployFailedAfter, 5*time.Minute)
 	config.SetDefault(configDownloadConnTimeout, 5*time.Minute)
 	config.SetDefault(configConcurrentDownloads, 15)
 	config.SetDefault(configDownloadQueueSize, 2000)
