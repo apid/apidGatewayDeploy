@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 
+	"io/ioutil"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -134,6 +136,31 @@ var _ = Describe("bundle", func() {
 			err = tx.Commit()
 			Expect(err).ShouldNot(HaveOccurred())
 
+			trackerHit := false
+			tracker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				defer GinkgoRecover()
+
+				b, err := ioutil.ReadAll(r.Body)
+				Expect(err).ShouldNot(HaveOccurred())
+				var received apiDeploymentResults
+				json.Unmarshal(b, &received)
+
+				expected := apiDeploymentResults{
+					{
+						ID:        deploymentID,
+						Status:    RESPONSE_STATUS_FAIL,
+						ErrorCode: TRACKER_ERR_BUNDLE_TIMEOUT,
+						Message:   "bundle download failed",
+					},
+				}
+				Expect(received).To(Equal(expected))
+				trackerHit = true
+				w.Write([]byte("OK"))
+			}))
+			defer tracker.Close()
+			apiServerBaseURI, err = url.Parse(tracker.URL)
+			Expect(err).ShouldNot(HaveOccurred())
+
 			queueDownloadRequest(dep)
 
 			<-proceed
@@ -147,9 +174,11 @@ var _ = Describe("bundle", func() {
 
 			Expect(d.ID).To(Equal(deploymentID))
 			Expect(d.DeployStatus).To(Equal(RESPONSE_STATUS_FAIL))
-			Expect(d.DeployErrorCode).To(Equal(ERROR_CODE_TODO))
+			Expect(d.DeployErrorCode).To(Equal(TRACKER_ERR_BUNDLE_TIMEOUT))
 			Expect(d.DeployErrorMessage).ToNot(BeEmpty())
 			Expect(d.LocalBundleURI).To(BeEmpty())
+
+			Expect(trackerHit).To(BeTrue())
 
 			var listener = make(chan string)
 			addSubscriber <- listener
@@ -165,7 +194,7 @@ var _ = Describe("bundle", func() {
 
 			Expect(d.ID).To(Equal(deploymentID))
 			Expect(d.DeployStatus).To(Equal(RESPONSE_STATUS_FAIL))
-			Expect(d.DeployErrorCode).To(Equal(ERROR_CODE_TODO))
+			Expect(d.DeployErrorCode).To(Equal(TRACKER_ERR_BUNDLE_TIMEOUT))
 			Expect(d.DeployErrorMessage).ToNot(BeEmpty())
 			Expect(d.LocalBundleURI).To(BeAnExistingFile())
 		})

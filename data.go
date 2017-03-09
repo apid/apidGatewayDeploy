@@ -155,7 +155,7 @@ func getReadyDeployments() (deployments []DataDeployment, err error) {
 
 // getUnreadyDeployments() returns array of deployments that are not yet ready to deploy
 func getUnreadyDeployments() (deployments []DataDeployment, err error) {
-	return getDeployments("WHERE local_bundle_uri = $1 and deploy_status = $2", "", "")
+	return getDeployments("WHERE local_bundle_uri = $1", "")
 }
 
 // getDeployments() accepts a "WHERE ..." clause and optional parameters and returns the list of deployments
@@ -206,6 +206,9 @@ func dataDeploymentsFromRows(rows *sql.Rows) (deployments []DataDeployment) {
 }
 
 func setDeploymentResults(results apiDeploymentResults) error {
+
+	// also send results to server
+	go transmitDeploymentResultsToServer(results)
 
 	log.Debugf("setDeploymentResults: %v", results)
 
@@ -264,13 +267,4 @@ func updateLocalBundleURI(depID, localBundleUri string) error {
 	log.Debugf("update deployments %s localBundleUri to %s succeeded", depID, localBundleUri)
 
 	return nil
-}
-
-func getLocalBundleURI(depID string) (localBundleUri string, err error) {
-
-	err = getDB().QueryRow("SELECT local_bundle_uri FROM deployments WHERE id=$1;", depID).Scan(&localBundleUri)
-	if err == sql.ErrNoRows {
-		err = nil
-	}
-	return
 }

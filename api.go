@@ -13,12 +13,23 @@ import (
 	"time"
 )
 
+// todo: the full set of states should probably be RECEIVED, READY, FAIL, SUCCESS
 const (
 	RESPONSE_STATUS_SUCCESS = "SUCCESS"
 	RESPONSE_STATUS_FAIL    = "FAIL"
+)
 
-	// todo: add error codes where this is used
-	ERROR_CODE_TODO = 0
+const (
+	TRACKER_ERR_BUNDLE_TIMEOUT = iota
+	TRACKER_ERR_PARSE_FAILED
+	TRACKER_ERR_INVALID_CHECKSUM
+)
+
+const (
+	API_ERR_BAD_BLOCK = iota
+	API_ERR_BAD_JSON
+	API_ERR_INVALID_CONTENT
+	API_ERR_INTERNAL
 )
 
 var (
@@ -81,7 +92,7 @@ func writeError(w http.ResponseWriter, status int, code int, reason string) {
 }
 
 func writeDatabaseError(w http.ResponseWriter) {
-	writeError(w, http.StatusInternalServerError, ERROR_CODE_TODO, "database error")
+	writeError(w, http.StatusInternalServerError, API_ERR_INTERNAL, "database error")
 }
 
 func distributeEvents() {
@@ -143,7 +154,7 @@ func apiGetCurrentDeployments(w http.ResponseWriter, r *http.Request) {
 		var err error
 		timeout, err = strconv.Atoi(b)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, ERROR_CODE_TODO, "bad block value, must be number of seconds")
+			writeError(w, http.StatusBadRequest, API_ERR_BAD_BLOCK, "bad block value, must be number of seconds")
 			return
 		}
 	}
@@ -235,7 +246,7 @@ func apiSetDeploymentResults(w http.ResponseWriter, r *http.Request) {
 	err := json.Unmarshal(buf, &results)
 	if err != nil {
 		log.Errorf("Resp Handler Json Unmarshal err: ", err)
-		writeError(w, http.StatusBadRequest, ERROR_CODE_TODO, "Malformed JSON")
+		writeError(w, http.StatusBadRequest, API_ERR_BAD_JSON, "Malformed JSON")
 		return
 	}
 
@@ -269,12 +280,11 @@ func apiSetDeploymentResults(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if errs.Len() > 0 {
-		writeError(w, http.StatusBadRequest, ERROR_CODE_TODO, errs.String())
+		writeError(w, http.StatusBadRequest, API_ERR_INVALID_CONTENT, errs.String())
 		return
 	}
 
 	if len(validResults) > 0 {
-		go transmitDeploymentResultsToServer(validResults)
 		setDeploymentResults(validResults)
 	}
 

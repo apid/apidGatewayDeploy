@@ -72,7 +72,7 @@ func processSnapshot(snapshot *common.Snapshot) {
 					result := apiDeploymentResult{
 						ID:        dep.ID,
 						Status:    RESPONSE_STATUS_FAIL,
-						ErrorCode: ERROR_CODE_TODO,
+						ErrorCode: TRACKER_ERR_PARSE_FAILED,
 						Message:   fmt.Sprintf("unable to parse deployment: %v", err),
 					}
 					errResults = append(errResults, result)
@@ -174,7 +174,7 @@ func processChangeList(changes *common.ChangeList) {
 					result := apiDeploymentResult{
 						ID:        dep.ID,
 						Status:    RESPONSE_STATUS_FAIL,
-						ErrorCode: ERROR_CODE_TODO,
+						ErrorCode: TRACKER_ERR_PARSE_FAILED,
 						Message:   fmt.Sprintf("unable to parse deployment: %v", err),
 					}
 					errResults = append(errResults, result)

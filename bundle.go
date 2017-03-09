@@ -47,7 +47,7 @@ func queueDownloadRequest(dep DataDeployment) {
 			{
 				ID:        dep.ID,
 				Status:    RESPONSE_STATUS_FAIL,
-				ErrorCode: ERROR_CODE_TODO,
+				ErrorCode: TRACKER_ERR_INVALID_CHECKSUM,
 				Message:   msg,
 			},
 		})
@@ -132,7 +132,7 @@ func (r *DownloadRequest) checkTimeout() {
 				{
 					ID:        r.dep.ID,
 					Status:    RESPONSE_STATUS_FAIL,
-					ErrorCode: ERROR_CODE_TODO,
+					ErrorCode: TRACKER_ERR_BUNDLE_TIMEOUT,
 					Message:   "bundle download failed",
 				},
 			})
