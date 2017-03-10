@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -32,9 +31,15 @@ const (
 	API_ERR_INTERNAL
 )
 
+type deploymentsResult struct {
+	deployments []DataDeployment
+	err         error
+}
+
 var (
-	deploymentsChanged = make(chan string)
-	addSubscriber      = make(chan chan string)
+	deploymentsChanged = make(chan interface{})
+	addSubscriber      = make(chan chan deploymentsResult)
+	removeSubscriber   = make(chan chan deploymentsResult)
 	eTag               int64
 )
 
@@ -95,47 +100,71 @@ func writeDatabaseError(w http.ResponseWriter) {
 	writeError(w, http.StatusInternalServerError, API_ERR_INTERNAL, "database error")
 }
 
-func distributeEvents() {
-	subscribers := make(map[chan string]struct{})
-	mut := sync.Mutex{}
-	msg := ""
-	debouncer := func() {
-		select {
-		case <-time.After(debounceDuration):
-			mut.Lock()
-			subs := subscribers
-			subscribers = make(map[chan string]struct{})
-			m := msg
-			msg = ""
-			incrementETag()
-			mut.Unlock()
-			log.Debugf("Delivering deployment change %s to %d subscribers", m, len(subs))
-			for subscriber := range subs {
-				select {
-				case subscriber <- m:
-					log.Debugf("Handling deploy response for: %s", m)
-					log.Debugf("delivering TO: %v", subscriber)
-				default:
-					log.Debugf("listener too far behind, message dropped")
-				}
-			}
+func debounce(in chan interface{}, out chan []interface{}, window time.Duration) {
+	send := func(toSend []interface{}) {
+		if toSend != nil {
+			log.Debugf("debouncer sending: %v", toSend)
+			out <- toSend
 		}
 	}
 	for {
-		select {
-		case newMsg := <-deploymentsChanged:
-			mut.Lock()
-			log.Debug("deploymentsChanged")
-			if msg == "" {
-				go debouncer()
+		incoming, ok := <-in
+		if !ok {
+			log.Debugf("closing debouncer")
+			close(out)
+			return
+		}
+		log.Debugf("debouncing %v", incoming)
+		toSend := []interface{}{incoming}
+		for {
+			select {
+			case incoming, ok := <-in:
+				if ok {
+					log.Debugf("debouncing %v", incoming)
+					toSend = append(toSend, incoming)
+				} else {
+					send(toSend)
+					log.Debugf("closing debouncer")
+					close(out)
+					return
+				}
+			case <-time.After(window):
+				send(toSend)
+				toSend = nil
 			}
-			msg = newMsg
-			mut.Unlock()
+		}
+	}
+}
+
+func distributeEvents() {
+	subscribers := make(map[chan deploymentsResult]struct{})
+	deliverDeployments := make(chan []interface{})
+
+	go debounce(deploymentsChanged, deliverDeployments, debounceDuration)
+
+	for {
+		select {
+		case _, ok := <-deliverDeployments:
+			if !ok {
+				return // todo: using this?
+			}
+			subs := subscribers
+			subscribers = make(map[chan deploymentsResult]struct{})
+			incrementETag()
+			go func() {
+				deployments, err := getReadyDeployments()
+				log.Debugf("delivering deployments to %d subscribers", len(subs))
+				for subscriber := range subs {
+					log.Debugf("delivering to: %v", subscriber)
+					subscriber <- deploymentsResult{deployments, err}
+				}
+			}()
 		case subscriber := <-addSubscriber:
 			log.Debugf("Add subscriber: %v", subscriber)
-			mut.Lock()
 			subscribers[subscriber] = struct{}{}
-			mut.Unlock()
+		case subscriber := <-removeSubscriber:
+			log.Debugf("Remove subscriber: %v", subscriber)
+			delete(subscribers, subscriber)
 		}
 	}
 }
@@ -173,39 +202,47 @@ func apiGetCurrentDeployments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// subscribe to new deployments in case we need it
-	var gotNewDeployment chan string
-	if timeout > 0 && ifNoneMatch != "" {
-		gotNewDeployment = make(chan string)
-		addSubscriber <- gotNewDeployment
-	}
-
-	deployments, err := getReadyDeployments()
-	if err != nil {
-		writeDatabaseError(w)
-		return
-	}
-
 	// send results if different eTag
 	if eTag != ifNoneMatch {
-		sendDeployments(w, deployments, eTag)
+		sendReadyDeployments(w, eTag)
 		return
+	}
+
+	// otherwise, subscribe to any new deployment changes
+	var newDeploymentsChannel chan deploymentsResult
+	if timeout > 0 && ifNoneMatch != "" {
+		newDeploymentsChannel = make(chan deploymentsResult, 1)
+		addSubscriber <- newDeploymentsChannel
 	}
 
 	log.Debug("Blocking request... Waiting for new Deployments.")
 
 	select {
-	case <-gotNewDeployment:
-		apiGetCurrentDeployments(w, r) // recurse
+	case result := <-newDeploymentsChannel:
+		if result.err != nil {
+			writeDatabaseError(w)
+		} else {
+			sendDeployments(w, result.deployments, eTag)
+		}
 
 	case <-time.After(time.Duration(timeout) * time.Second):
+		removeSubscriber <- newDeploymentsChannel
 		log.Debug("Blocking deployment request timed out.")
 		if ifNoneMatch != "" {
 			w.WriteHeader(http.StatusNotModified)
 		} else {
-			sendDeployments(w, deployments, eTag)
+			sendReadyDeployments(w, eTag)
 		}
 	}
+}
+
+func sendReadyDeployments(w http.ResponseWriter, eTag string) {
+	deployments, err := getReadyDeployments()
+	if err != nil {
+		writeDatabaseError(w)
+		return
+	}
+	sendDeployments(w, deployments, eTag)
 }
 
 func sendDeployments(w http.ResponseWriter, dataDeps []DataDeployment, eTag string) {

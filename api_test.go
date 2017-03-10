@@ -37,15 +37,28 @@ var _ = Describe("api", func() {
 			Expect(string(body)).Should(Equal("[]"))
 		})
 
-		It("should debounce requests", func() {
-			var listener = make(chan string)
-			addSubscriber <- listener
+		It("should debounce requests", func(done Done) {
+			var in = make(chan interface{})
+			var out = make(chan []interface{})
 
-			deploymentsChanged <- "x"
-			deploymentsChanged <- "y"
+			go debounce(in, out, 3*time.Millisecond)
 
-			id := <-listener
-			Expect(id).To(Equal("y"))
+			go func() {
+				defer GinkgoRecover()
+
+				received, ok := <-out
+				Expect(ok).To(BeTrue())
+				Expect(len(received)).To(Equal(2))
+
+				close(in)
+				received, ok = <-out
+				Expect(ok).To(BeFalse())
+
+				close(done)
+			}()
+
+			in <- "x"
+			in <- "y"
 		})
 
 		It("should get current deployments", func() {

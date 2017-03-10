@@ -50,19 +50,28 @@ var _ = Describe("listener", func() {
 				},
 			}
 
-			var listener = make(chan string)
+			var listener = make(chan deploymentsResult)
 			addSubscriber <- listener
 
 			apid.Events().Emit(APIGEE_SYNC_EVENT, &event)
 
-			id := <-listener
-			Expect(id).To(Equal(deploymentID))
+			result := <-listener
+			Expect(result.err).ToNot(HaveOccurred())
 
+			// from event
+			Expect(len(result.deployments)).To(Equal(1))
+			d := result.deployments[0]
+
+			Expect(d.ID).To(Equal(deploymentID))
+			Expect(d.BundleName).To(Equal(bundle1.Name))
+			Expect(d.BundleURI).To(Equal(bundle1.URI))
+
+			// from db
 			deployments, err := getReadyDeployments()
 			Expect(err).ShouldNot(HaveOccurred())
 
 			Expect(len(deployments)).To(Equal(1))
-			d := deployments[0]
+			d = deployments[0]
 
 			Expect(d.ID).To(Equal(deploymentID))
 			Expect(d.BundleName).To(Equal(bundle1.Name))
@@ -120,19 +129,16 @@ var _ = Describe("listener", func() {
 			err = tx.Commit()
 			Expect(err).ShouldNot(HaveOccurred())
 
-			var listener = make(chan string)
+			var listener = make(chan deploymentsResult)
 			addSubscriber <- listener
 
 			apid.Events().Emit(APIGEE_SYNC_EVENT, &snapshot)
 
-			id := <-listener
-			Expect(id).To(Equal(deploymentID))
+			result := <-listener
+			Expect(result.err).ShouldNot(HaveOccurred())
 
-			deployments, err := getReadyDeployments()
-			Expect(err).ShouldNot(HaveOccurred())
-
-			Expect(len(deployments)).To(Equal(1))
-			d := deployments[0]
+			Expect(len(result.deployments)).To(Equal(1))
+			d := result.deployments[0]
 
 			Expect(d.ID).To(Equal(deploymentID))
 			close(done)
@@ -257,14 +263,14 @@ var _ = Describe("listener", func() {
 				},
 			}
 
-			var listener = make(chan string)
+			var listener = make(chan deploymentsResult)
 			addSubscriber <- listener
 
 			apid.Events().Emit(APIGEE_SYNC_EVENT, &event)
 
 			// wait for event to propagate
-			id := <-listener
-			Expect(id).To(Equal(deploymentID))
+			result := <-listener
+			Expect(result.err).ShouldNot(HaveOccurred())
 
 			deployments, err := getReadyDeployments()
 			Expect(err).ShouldNot(HaveOccurred())
@@ -307,13 +313,12 @@ var _ = Describe("listener", func() {
 				},
 			}
 
-			var listener = make(chan string)
+			var listener = make(chan deploymentsResult)
 			addSubscriber <- listener
 
 			apid.Events().Emit(APIGEE_SYNC_EVENT, &event)
 
-			id := <-listener
-			Expect(id).To(Equal(deploymentID))
+			<-listener
 
 			deployments, err := getReadyDeployments()
 			Expect(err).ShouldNot(HaveOccurred())
