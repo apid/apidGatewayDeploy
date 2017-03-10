@@ -34,10 +34,11 @@ const (
 type deploymentsResult struct {
 	deployments []DataDeployment
 	err         error
+	eTag        string
 }
 
 var (
-	deploymentsChanged = make(chan interface{})
+	deploymentsChanged = make(chan interface{}, 5)
 	addSubscriber      = make(chan chan deploymentsResult)
 	removeSubscriber   = make(chan chan deploymentsResult)
 	eTag               int64
@@ -107,38 +108,29 @@ func debounce(in chan interface{}, out chan []interface{}, window time.Duration)
 			out <- toSend
 		}
 	}
+	var toSend []interface{}
 	for {
-		incoming, ok := <-in
-		if !ok {
-			log.Debugf("closing debouncer")
-			close(out)
-			return
-		}
-		log.Debugf("debouncing %v", incoming)
-		toSend := []interface{}{incoming}
-		for {
-			select {
-			case incoming, ok := <-in:
-				if ok {
-					log.Debugf("debouncing %v", incoming)
-					toSend = append(toSend, incoming)
-				} else {
-					send(toSend)
-					log.Debugf("closing debouncer")
-					close(out)
-					return
-				}
-			case <-time.After(window):
+		select {
+		case incoming, ok := <-in:
+			if ok {
+				log.Debugf("debouncing %v", incoming)
+				toSend = append(toSend, incoming)
+			} else {
 				send(toSend)
-				toSend = nil
+				log.Debugf("closing debouncer")
+				close(out)
+				return
 			}
+		case <-time.After(window):
+			send(toSend)
+			toSend = nil
 		}
 	}
 }
 
 func distributeEvents() {
 	subscribers := make(map[chan deploymentsResult]struct{})
-	deliverDeployments := make(chan []interface{})
+	deliverDeployments := make(chan []interface{}, 1)
 
 	go debounce(deploymentsChanged, deliverDeployments, debounceDuration)
 
@@ -150,13 +142,13 @@ func distributeEvents() {
 			}
 			subs := subscribers
 			subscribers = make(map[chan deploymentsResult]struct{})
-			incrementETag()
 			go func() {
+				eTag := incrementETag()
 				deployments, err := getReadyDeployments()
 				log.Debugf("delivering deployments to %d subscribers", len(subs))
 				for subscriber := range subs {
 					log.Debugf("delivering to: %v", subscriber)
-					subscriber <- deploymentsResult{deployments, err}
+					subscriber <- deploymentsResult{deployments, err, eTag}
 				}
 			}()
 		case subscriber := <-addSubscriber:
@@ -204,7 +196,7 @@ func apiGetCurrentDeployments(w http.ResponseWriter, r *http.Request) {
 
 	// send results if different eTag
 	if eTag != ifNoneMatch {
-		sendReadyDeployments(w, eTag)
+		sendReadyDeployments(w)
 		return
 	}
 
@@ -222,7 +214,7 @@ func apiGetCurrentDeployments(w http.ResponseWriter, r *http.Request) {
 		if result.err != nil {
 			writeDatabaseError(w)
 		} else {
-			sendDeployments(w, result.deployments, eTag)
+			sendDeployments(w, result.deployments, result.eTag)
 		}
 
 	case <-time.After(time.Duration(timeout) * time.Second):
@@ -231,12 +223,13 @@ func apiGetCurrentDeployments(w http.ResponseWriter, r *http.Request) {
 		if ifNoneMatch != "" {
 			w.WriteHeader(http.StatusNotModified)
 		} else {
-			sendReadyDeployments(w, eTag)
+			sendReadyDeployments(w)
 		}
 	}
 }
 
-func sendReadyDeployments(w http.ResponseWriter, eTag string) {
+func sendReadyDeployments(w http.ResponseWriter) {
+	eTag := getETag()
 	deployments, err := getReadyDeployments()
 	if err != nil {
 		writeDatabaseError(w)
@@ -380,8 +373,9 @@ func transmitDeploymentResultsToServer(validResults apiDeploymentResults) error 
 }
 
 // call whenever the list of deployments changes
-func incrementETag() {
-	atomic.AddInt64(&eTag, 1)
+func incrementETag() string {
+	e := atomic.AddInt64(&eTag, 1)
+	return strconv.FormatInt(e, 10)
 }
 
 func getETag() string {

@@ -109,6 +109,7 @@ var _ = Describe("api", func() {
 			res, err := http.Get(uri.String())
 			Expect(err).ShouldNot(HaveOccurred())
 			defer res.Body.Close()
+			Expect(res.Header.Get("etag")).ShouldNot(BeEmpty())
 
 			req, err := http.NewRequest("GET", uri.String(), nil)
 			req.Header.Add("Content-Type", "application/json")
@@ -152,6 +153,7 @@ var _ = Describe("api", func() {
 			Expect(err).ShouldNot(HaveOccurred())
 			defer res.Body.Close()
 			eTag := res.Header.Get("etag")
+			Expect(eTag).ShouldNot(BeEmpty())
 
 			deploymentID = "api_get_current_blocking2"
 			go func() {
@@ -168,6 +170,9 @@ var _ = Describe("api", func() {
 				Expect(err).ShouldNot(HaveOccurred())
 				defer res.Body.Close()
 				Expect(res.StatusCode).To(Equal(http.StatusOK))
+
+				Expect(res.Header.Get("etag")).ShouldNot(BeEmpty())
+				Expect(res.Header.Get("etag")).ShouldNot(Equal(eTag))
 
 				var depRes ApiDeploymentResponse
 				body, err := ioutil.ReadAll(res.Body)
@@ -199,6 +204,7 @@ var _ = Describe("api", func() {
 			res, err := http.Get(uri.String())
 			Expect(err).ShouldNot(HaveOccurred())
 			defer res.Body.Close()
+			Expect(res.Header.Get("etag")).ShouldNot(BeEmpty())
 
 			query := uri.Query()
 			query.Add("block", "1")

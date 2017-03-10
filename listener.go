@@ -222,8 +222,8 @@ func processChangeList(changes *common.ChangeList) {
 		log.Panicf("Error processing ChangeList: %v", err)
 	}
 
-	if len(deploymentsToDelete) > 0 {
-		deploymentsChanged <- deploymentsToDelete[0].ID // arbitrary, the ID doesn't matter
+	for _, d := range deploymentsToDelete {
+		deploymentsChanged <- d.ID
 	}
 
 	log.Debug("ChangeList processed")
