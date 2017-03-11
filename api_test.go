@@ -37,15 +37,28 @@ var _ = Describe("api", func() {
 			Expect(string(body)).Should(Equal("[]"))
 		})
 
-		It("should debounce requests", func() {
-			var listener = make(chan string)
-			addSubscriber <- listener
+		It("should debounce requests", func(done Done) {
+			var in = make(chan interface{})
+			var out = make(chan []interface{})
 
-			deploymentsChanged <- "x"
-			deploymentsChanged <- "y"
+			go debounce(in, out, 3*time.Millisecond)
 
-			id := <-listener
-			Expect(id).To(Equal("y"))
+			go func() {
+				defer GinkgoRecover()
+
+				received, ok := <-out
+				Expect(ok).To(BeTrue())
+				Expect(len(received)).To(Equal(2))
+
+				close(in)
+				received, ok = <-out
+				Expect(ok).To(BeFalse())
+
+				close(done)
+			}()
+
+			in <- "x"
+			in <- "y"
 		})
 
 		It("should get current deployments", func() {
@@ -96,6 +109,7 @@ var _ = Describe("api", func() {
 			res, err := http.Get(uri.String())
 			Expect(err).ShouldNot(HaveOccurred())
 			defer res.Body.Close()
+			Expect(res.Header.Get("etag")).ShouldNot(BeEmpty())
 
 			req, err := http.NewRequest("GET", uri.String(), nil)
 			req.Header.Add("Content-Type", "application/json")
@@ -139,6 +153,7 @@ var _ = Describe("api", func() {
 			Expect(err).ShouldNot(HaveOccurred())
 			defer res.Body.Close()
 			eTag := res.Header.Get("etag")
+			Expect(eTag).ShouldNot(BeEmpty())
 
 			deploymentID = "api_get_current_blocking2"
 			go func() {
@@ -155,6 +170,9 @@ var _ = Describe("api", func() {
 				Expect(err).ShouldNot(HaveOccurred())
 				defer res.Body.Close()
 				Expect(res.StatusCode).To(Equal(http.StatusOK))
+
+				Expect(res.Header.Get("etag")).ShouldNot(BeEmpty())
+				Expect(res.Header.Get("etag")).ShouldNot(Equal(eTag))
 
 				var depRes ApiDeploymentResponse
 				body, err := ioutil.ReadAll(res.Body)
@@ -186,6 +204,7 @@ var _ = Describe("api", func() {
 			res, err := http.Get(uri.String())
 			Expect(err).ShouldNot(HaveOccurred())
 			defer res.Body.Close()
+			Expect(res.Header.Get("etag")).ShouldNot(BeEmpty())
 
 			query := uri.Query()
 			query.Add("block", "1")

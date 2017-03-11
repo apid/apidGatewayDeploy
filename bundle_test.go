@@ -60,16 +60,13 @@ var _ = Describe("bundle", func() {
 
 			queueDownloadRequest(dep)
 
-			var listener = make(chan string)
+			var listener = make(chan deploymentsResult)
 			addSubscriber <- listener
-			<-listener
+			result := <-listener
 
-			getReadyDeployments()
-			deployments, err := getReadyDeployments()
-			Expect(err).ShouldNot(HaveOccurred())
-
-			Expect(len(deployments)).To(Equal(1))
-			d := deployments[0]
+			Expect(result.err).NotTo(HaveOccurred())
+			Expect(len(result.deployments)).To(Equal(1))
+			d := result.deployments[0]
 			Expect(d.ID).To(Equal(deploymentID))
 		})
 
@@ -180,7 +177,7 @@ var _ = Describe("bundle", func() {
 
 			Expect(trackerHit).To(BeTrue())
 
-			var listener = make(chan string)
+			var listener = make(chan deploymentsResult)
 			addSubscriber <- listener
 			<-listener
 

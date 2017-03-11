@@ -38,6 +38,7 @@ var _ = BeforeSuite(func() {
 	config.Set(configApidInstanceID, "INSTANCE_ID")
 	config.Set(configApidClusterID, "CLUSTER_ID")
 	config.Set(configApiServerBaseURI, "http://localhost")
+	config.Set(configDebounceDuration, "1ms")
 
 	apid.InitializePlugins()
 
@@ -47,7 +48,6 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	SetDB(db)
 
-	debounceDuration = time.Millisecond
 	bundleCleanupDelay = time.Millisecond
 	bundleRetryDelay = 10 * time.Millisecond
 	markDeploymentFailedAfter = 50 * time.Millisecond
