@@ -183,6 +183,7 @@ func downloadFromURI(uri string, hashWriter hash.Hash, expectedHash string) (tem
 	checksum := hex.EncodeToString(hashWriter.Sum(nil))
 	if checksum != expectedHash {
 		err = errors.New(fmt.Sprintf("Bad checksum on %s. calculated: %s, given: %s", tempFileName, checksum, expectedHash))
+		log.Error(err.Error())
 		return
 	}
 
