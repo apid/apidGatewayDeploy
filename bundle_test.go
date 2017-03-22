@@ -380,8 +380,7 @@ var _ = Describe("bundle", func() {
 			// search logs for "never mind, deployment bundle_download_deployment_deleted was deleted"
 		})
 
-		// todo: remove empty checksum support?
-		It("should download even if empty Checksum and ChecksumType", func() {
+		It("should download if empty Checksum and ChecksumType", func() {
 
 			deploymentID := "bundle_download_temporary"
 

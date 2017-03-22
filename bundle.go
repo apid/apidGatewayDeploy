@@ -233,7 +233,6 @@ func getHashWriter(hashType string) (hash.Hash, error) {
 
 	switch strings.ToLower(hashType) {
 	case "":
-		// todo: remove empty checksum support?
 		hashWriter = fakeHash{md5.New()}
 	case "md5":
 		hashWriter = md5.New()
