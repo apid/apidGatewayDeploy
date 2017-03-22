@@ -2,6 +2,8 @@ package apiGatewayDeploy
 
 import (
 	"crypto/md5"
+	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -14,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"strings"
 	"time"
 )
 
@@ -201,7 +204,7 @@ func getURIFileReader(uriString string) (io.ReadCloser, error) {
 
 	// todo: add authentication - TBD?
 
-	// assume it's a file if no scheme
+	// assume it's a file if no scheme - todo: remove file support?
 	if uri.Scheme == "" || uri.Scheme == "file" {
 		f, err := os.Open(uri.Path)
 		if err != nil {
@@ -228,15 +231,21 @@ func getHashWriter(hashType string) (hash.Hash, error) {
 
 	var hashWriter hash.Hash
 
-	switch hashType {
+	switch strings.ToLower(hashType) {
+	case "":
+		// todo: remove empty checksum support?
+		hashWriter = fakeHash{md5.New()}
 	case "md5":
 		hashWriter = md5.New()
-	case "crc-32":
+	case "crc32":
 		hashWriter = crc32.NewIEEE()
+	case "sha256":
+		hashWriter = sha256.New()
+	case "sha512":
+		hashWriter = sha512.New()
 	default:
-		// todo: temporary - this disables checksums until server implements (XAPID-544)
-		hashWriter = fakeHash{md5.New()}
-		//return nil, errors.New("checksumType must be md5 or crc-32")
+		return nil, errors.New(
+			fmt.Sprintf("invalid checksumType: %s. valid types: md5, crc32, sha256, sha512", hashType))
 	}
 
 	return hashWriter, nil

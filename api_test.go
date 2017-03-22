@@ -374,7 +374,7 @@ func insertTestDeployment(testServer *httptest.Server, deploymentID string) {
 	bundle := bundleConfigJson{
 		Name:         uri.Path,
 		URI:          bundleUri,
-		ChecksumType: "crc-32",
+		ChecksumType: "crc32",
 	}
 	bundle.Checksum = testGetChecksum(bundle.ChecksumType, bundleUri)
 	bundleJson, err := json.Marshal(bundle)

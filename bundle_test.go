@@ -30,7 +30,6 @@ var _ = Describe("bundle", func() {
 					time.Sleep(1 * time.Second)
 					w.WriteHeader(500)
 				} else {
-					//proceed <- true
 					w.Write([]byte("/bundles/longfail"))
 				}
 			}))
@@ -48,8 +47,8 @@ var _ = Describe("bundle", func() {
 				ID:                 deploymentID,
 				DataScopeID:        deploymentID,
 				BundleURI:          uri.String(),
-				BundleChecksum:     testGetChecksum("crc-32", uri.String()),
-				BundleChecksumType: "crc-32",
+				BundleChecksum:     testGetChecksum("crc32", uri.String()),
+				BundleChecksumType: "crc32",
 			}
 
 			err = InsertDeployment(tx, dep)
@@ -70,7 +69,125 @@ var _ = Describe("bundle", func() {
 			Expect(d.ID).To(Equal(deploymentID))
 		})
 
-		It("should timeout deployment, mark status as failed, then finish", func() {
+		It("should download correctly with sha256", func() {
+			uri, err := url.Parse(testServer.URL)
+			Expect(err).ShouldNot(HaveOccurred())
+			uri.Path = "/bundles/longfail"
+			checksum := testGetChecksum("sha256", uri.String())
+
+			tx, err := getDB().Begin()
+			Expect(err).ShouldNot(HaveOccurred())
+
+			deploymentID := "bundle_download_succeed"
+			dep := DataDeployment{
+				ID:                 deploymentID,
+				DataScopeID:        deploymentID,
+				BundleURI:          uri.String(),
+				BundleChecksum:     checksum,
+				BundleChecksumType: "sha256",
+			}
+
+			err = InsertDeployment(tx, dep)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			err = tx.Commit()
+			Expect(err).ShouldNot(HaveOccurred())
+
+			queueDownloadRequest(dep)
+
+			var listener = make(chan deploymentsResult)
+			addSubscriber <- listener
+			result := <-listener
+
+			Expect(result.err).NotTo(HaveOccurred())
+			Expect(len(result.deployments)).To(Equal(1))
+			d := result.deployments[0]
+			Expect(d.ID).To(Equal(deploymentID))
+		})
+
+		It("should download correctly with sh512", func() {
+			uri, err := url.Parse(testServer.URL)
+			Expect(err).ShouldNot(HaveOccurred())
+			uri.Path = "/bundles/longfail"
+			checksum := testGetChecksum("sha512", uri.String())
+
+			tx, err := getDB().Begin()
+			Expect(err).ShouldNot(HaveOccurred())
+
+			deploymentID := "bundle_download_succeed"
+			dep := DataDeployment{
+				ID:                 deploymentID,
+				DataScopeID:        deploymentID,
+				BundleURI:          uri.String(),
+				BundleChecksum:     checksum,
+				BundleChecksumType: "sha512",
+			}
+
+			err = InsertDeployment(tx, dep)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			err = tx.Commit()
+			Expect(err).ShouldNot(HaveOccurred())
+
+			queueDownloadRequest(dep)
+
+			var listener = make(chan deploymentsResult)
+			addSubscriber <- listener
+			result := <-listener
+
+			Expect(result.err).NotTo(HaveOccurred())
+			Expect(len(result.deployments)).To(Equal(1))
+			d := result.deployments[0]
+			Expect(d.ID).To(Equal(deploymentID))
+		})
+
+		It("should download correctly with MD5 and redirects", func() {
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/bundles/longfail" {
+					w.Write([]byte("/bundles/longfail"))
+				} else {
+					http.Redirect(w, r, "/bundles/longfail", 302)
+				}
+			}))
+			defer ts.Close()
+
+			uri, err := url.Parse(ts.URL)
+			Expect(err).ShouldNot(HaveOccurred())
+			uri.Path = "/bundles/longfail"
+			checksum := testGetChecksum("MD5", uri.String())
+			uri.Path = "/bundles/redirect"
+
+			tx, err := getDB().Begin()
+			Expect(err).ShouldNot(HaveOccurred())
+
+			deploymentID := "bundle_download_succeed"
+			dep := DataDeployment{
+				ID:                 deploymentID,
+				DataScopeID:        deploymentID,
+				BundleURI:          uri.String(),
+				BundleChecksum:     checksum,
+				BundleChecksumType: "MD5",
+			}
+
+			err = InsertDeployment(tx, dep)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			err = tx.Commit()
+			Expect(err).ShouldNot(HaveOccurred())
+
+			queueDownloadRequest(dep)
+
+			var listener = make(chan deploymentsResult)
+			addSubscriber <- listener
+			result := <-listener
+
+			Expect(result.err).NotTo(HaveOccurred())
+			Expect(len(result.deployments)).To(Equal(1))
+			d := result.deployments[0]
+			Expect(d.ID).To(Equal(deploymentID))
+		})
+
+		It("should timeout deployment, mark status as failed, then finish using crc32", func() {
 
 			proceed := make(chan bool)
 			failedOnce := false
@@ -97,7 +214,7 @@ var _ = Describe("bundle", func() {
 			bundle := bundleConfigJson{
 				Name:         uri.Path,
 				URI:          bundleUri,
-				ChecksumType: "crc-32",
+				ChecksumType: "crc32",
 			}
 			bundle.Checksum = testGetChecksum(bundle.ChecksumType, bundleUri)
 			bundleJson, err := json.Marshal(bundle)
@@ -208,7 +325,7 @@ var _ = Describe("bundle", func() {
 			bundle := bundleConfigJson{
 				Name:         uri.Path,
 				URI:          bundleUri,
-				ChecksumType: "crc-32",
+				ChecksumType: "crc32",
 			}
 			bundle.Checksum = testGetChecksum(bundle.ChecksumType, bundleUri)
 			bundleJson, err := json.Marshal(bundle)
@@ -263,8 +380,8 @@ var _ = Describe("bundle", func() {
 			// search logs for "never mind, deployment bundle_download_deployment_deleted was deleted"
 		})
 
-		// todo: temporary - this tests that checksum is disabled until server implements (XAPID-544)
-		It("should TEMPORARILY download even if empty Checksum and ChecksumType", func() {
+		// todo: remove empty checksum support?
+		It("should download even if empty Checksum and ChecksumType", func() {
 
 			deploymentID := "bundle_download_temporary"
 
