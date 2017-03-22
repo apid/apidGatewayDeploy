@@ -71,7 +71,7 @@ var _ = BeforeSuite(func() {
 	router.HandleFunc("/bundles/{id}", func(w http.ResponseWriter, req *http.Request) {
 		count++
 		vars := apid.API().Vars(req)
-		if count%2 == 0 {
+		if count%2 == 0 && vars["id"] != "checksum" {
 			w.WriteHeader(500)
 			return
 		}
