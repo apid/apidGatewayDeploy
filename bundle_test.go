@@ -30,7 +30,6 @@ var _ = Describe("bundle", func() {
 					time.Sleep(1 * time.Second)
 					w.WriteHeader(500)
 				} else {
-					//proceed <- true
 					w.Write([]byte("/bundles/longfail"))
 				}
 			}))
@@ -48,8 +47,8 @@ var _ = Describe("bundle", func() {
 				ID:                 deploymentID,
 				DataScopeID:        deploymentID,
 				BundleURI:          uri.String(),
-				BundleChecksum:     testGetChecksum("crc-32", uri.String()),
-				BundleChecksumType: "crc-32",
+				BundleChecksum:     testGetChecksum("crc32", uri.String()),
+				BundleChecksumType: "crc32",
 			}
 
 			err = InsertDeployment(tx, dep)
@@ -97,7 +96,7 @@ var _ = Describe("bundle", func() {
 			bundle := bundleConfigJson{
 				Name:         uri.Path,
 				URI:          bundleUri,
-				ChecksumType: "crc-32",
+				ChecksumType: "crc32",
 			}
 			bundle.Checksum = testGetChecksum(bundle.ChecksumType, bundleUri)
 			bundleJson, err := json.Marshal(bundle)
@@ -208,7 +207,7 @@ var _ = Describe("bundle", func() {
 			bundle := bundleConfigJson{
 				Name:         uri.Path,
 				URI:          bundleUri,
-				ChecksumType: "crc-32",
+				ChecksumType: "crc32",
 			}
 			bundle.Checksum = testGetChecksum(bundle.ChecksumType, bundleUri)
 			bundleJson, err := json.Marshal(bundle)
@@ -262,69 +261,78 @@ var _ = Describe("bundle", func() {
 			// No way to test this programmatically currently
 			// search logs for "never mind, deployment bundle_download_deployment_deleted was deleted"
 		})
+	})
 
-		// todo: temporary - this tests that checksum is disabled until server implements (XAPID-544)
-		It("should TEMPORARILY download even if empty Checksum and ChecksumType", func() {
+	Context("checksums", func() {
 
-			deploymentID := "bundle_download_temporary"
+		It("should download with empty checksumType", func() {
+			checksumDownloadValid("")
+		})
 
-			uri, err := url.Parse(testServer.URL)
-			Expect(err).ShouldNot(HaveOccurred())
+		It("should fail download with bad empty checksumType", func() {
+			checksumDownloadInvalid("")
+		})
 
-			uri.Path = "/bundles/1"
-			bundleUri := uri.String()
-			bundle := bundleConfigJson{
-				Name:         uri.Path,
-				URI:          bundleUri,
-				ChecksumType: "",
-				Checksum:     "",
-			}
-			bundleJson, err := json.Marshal(bundle)
-			Expect(err).ShouldNot(HaveOccurred())
+		It("should fail download with bad md5", func() {
+			checksumDownloadInvalid("md5")
+		})
 
-			tx, err := getDB().Begin()
-			Expect(err).ShouldNot(HaveOccurred())
+		It("should download with good md5", func() {
+			checksumDownloadValid("md5")
+		})
 
-			dep := DataDeployment{
-				ID:                 deploymentID,
-				BundleConfigID:     deploymentID,
-				ApidClusterID:      deploymentID,
-				DataScopeID:        deploymentID,
-				BundleConfigJSON:   string(bundleJson),
-				ConfigJSON:         string(bundleJson),
-				Created:            "",
-				CreatedBy:          "",
-				Updated:            "",
-				UpdatedBy:          "",
-				BundleName:         deploymentID,
-				BundleURI:          bundle.URI,
-				BundleChecksum:     bundle.Checksum,
-				BundleChecksumType: bundle.ChecksumType,
-				LocalBundleURI:     "",
-				DeployStatus:       "",
-				DeployErrorCode:    0,
-				DeployErrorMessage: "",
-			}
+		It("should fail download with bad md5", func() {
+			checksumDownloadInvalid("md5")
+		})
 
-			err = InsertDeployment(tx, dep)
-			Expect(err).ShouldNot(HaveOccurred())
+		It("should download with good crc32", func() {
+			checksumDownloadValid("crc32")
+		})
 
-			err = tx.Commit()
-			Expect(err).ShouldNot(HaveOccurred())
+		It("should fail download with bad crc32", func() {
+			checksumDownloadInvalid("crc32")
+		})
 
-			queueDownloadRequest(dep)
+		It("should download with good sha256", func() {
+			checksumDownloadValid("sha256")
+		})
 
-			// give download time to finish
-			time.Sleep(markDeploymentFailedAfter + (100 * time.Millisecond))
+		It("should fail download with bad sha256", func() {
+			checksumDownloadInvalid("sha256")
+		})
 
-			deployments, err := getReadyDeployments()
-			Expect(err).ShouldNot(HaveOccurred())
+		It("should download correctly with sha512", func() {
+			checksumDownloadValid("sha512")
+		})
 
-			Expect(len(deployments)).To(Equal(1))
-			d := deployments[0]
-
-			Expect(d.ID).To(Equal(deploymentID))
-			Expect(d.LocalBundleURI).To(BeAnExistingFile())
+		It("should fail download with bad sha512", func() {
+			checksumDownloadInvalid("sha512")
 		})
 	})
 })
+
+func checksumDownloadValid(checksumType string) {
+	defer GinkgoRecover()
+
+	uri, err := url.Parse(testServer.URL)
+	Expect(err).ShouldNot(HaveOccurred())
+	uri.Path = "/bundles/checksum"
+	checksum := testGetChecksum(checksumType, uri.String())
+	hash, err := getHashWriter(checksumType)
+	Expect(err).NotTo(HaveOccurred())
+	_, err = downloadFromURI(uri.String(), hash, checksum)
+	Expect(err).NotTo(HaveOccurred())
+}
+
+func checksumDownloadInvalid(checksumType string) {
+	defer GinkgoRecover()
+
+	uri, err := url.Parse(testServer.URL)
+	Expect(err).ShouldNot(HaveOccurred())
+	uri.Path = "/bundles/checksum"
+	checksum := "invalidchecksum"
+	hash, err := getHashWriter(checksumType)
+	Expect(err).NotTo(HaveOccurred())
+	_, err = downloadFromURI(uri.String(), hash, checksum)
+	Expect(err).To(HaveOccurred())
+}

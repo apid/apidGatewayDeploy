@@ -30,7 +30,7 @@ var _ = Describe("listener", func() {
 			bundle1 := bundleConfigJson{
 				Name:         uri.Path,
 				URI:          bundleUri,
-				ChecksumType: "crc-32",
+				ChecksumType: "crc32",
 			}
 			bundle1.Checksum = testGetChecksum(bundle1.ChecksumType, bundleUri)
 			bundle1Json, err := json.Marshal(bundle1)
@@ -92,7 +92,7 @@ var _ = Describe("listener", func() {
 			bundle := bundleConfigJson{
 				Name:         uri.Path,
 				URI:          bundleUri,
-				ChecksumType: "crc-32",
+				ChecksumType: "crc32",
 			}
 			bundle.Checksum = testGetChecksum(bundle.ChecksumType, bundleUri)
 
@@ -243,7 +243,7 @@ var _ = Describe("listener", func() {
 			bundle := bundleConfigJson{
 				Name:         uri.Path,
 				URI:          bundleUri,
-				ChecksumType: "crc-32",
+				ChecksumType: "crc32",
 			}
 			bundle.Checksum = testGetChecksum(bundle.ChecksumType, bundleUri)
 			bundle1Json, err := json.Marshal(bundle)
