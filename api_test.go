@@ -11,6 +11,7 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"strconv"
 )
 
 var _ = Describe("api", func() {
@@ -361,6 +362,37 @@ var _ = Describe("api", func() {
 
 			Expect(uploaded).To(Equal(deploymentResults))
 		})
+
+		It("should get iso8601 time", func() {
+			testTimes := []string{"2017-04-05 04:47:36.462 +0000 UTC", "2017-04-05 04:47:36.462 -0700 MST"}
+			isoTime := []string{"2017-04-05T04:47:36.462Z", "2017-04-05T04:47:36.462-07:00"}
+			for i, t := range testTimes {
+				log.Debug("insert deployment with timestamp: " + t)
+				deploymentID := "api_time_iso8601_" + strconv.Itoa(i)
+				insertTimeDeployment(testServer, deploymentID, t)
+			}
+
+			uri, err := url.Parse(testServer.URL)
+			uri.Path = deploymentsEndpoint
+
+			res, err := http.Get(uri.String())
+			Expect(err).ShouldNot(HaveOccurred())
+			defer res.Body.Close()
+
+			Expect(res.StatusCode).Should(Equal(http.StatusOK))
+
+			var depRes ApiDeploymentResponse
+			body, err := ioutil.ReadAll(res.Body)
+			Expect(err).ShouldNot(HaveOccurred())
+			json.Unmarshal(body, &depRes)
+
+			Expect(len(depRes)).To(Equal(2))
+
+			for i, dep := range depRes {
+				Expect(dep.Created).To(Equal(isoTime[i]))
+				Expect(dep.Updated).To(Equal(isoTime[i]))
+			}
+		})
 	})
 })
 
@@ -393,6 +425,53 @@ func insertTestDeployment(testServer *httptest.Server, deploymentID string) {
 		Created:            "",
 		CreatedBy:          "",
 		Updated:            "",
+		UpdatedBy:          "",
+		BundleName:         deploymentID,
+		BundleURI:          bundle.URI,
+		BundleChecksum:     bundle.Checksum,
+		BundleChecksumType: bundle.ChecksumType,
+		LocalBundleURI:     "x",
+		DeployStatus:       "",
+		DeployErrorCode:    0,
+		DeployErrorMessage: "",
+	}
+
+	err = InsertDeployment(tx, dep)
+	Expect(err).ShouldNot(HaveOccurred())
+
+	err = tx.Commit()
+	Expect(err).ShouldNot(HaveOccurred())
+}
+
+func insertTimeDeployment(testServer *httptest.Server, deploymentID string, timestamp string) {
+
+	uri, err := url.Parse(testServer.URL)
+	Expect(err).ShouldNot(HaveOccurred())
+
+	uri.Path = "/bundles/1"
+	bundleUri := uri.String()
+	bundle := bundleConfigJson{
+		Name:         uri.Path,
+		URI:          bundleUri,
+		ChecksumType: "crc32",
+	}
+	bundle.Checksum = testGetChecksum(bundle.ChecksumType, bundleUri)
+	bundleJson, err := json.Marshal(bundle)
+	Expect(err).ShouldNot(HaveOccurred())
+
+	tx, err := getDB().Begin()
+	Expect(err).ShouldNot(HaveOccurred())
+
+	dep := DataDeployment{
+		ID:                 deploymentID,
+		BundleConfigID:     deploymentID,
+		ApidClusterID:      deploymentID,
+		DataScopeID:        deploymentID,
+		BundleConfigJSON:   string(bundleJson),
+		ConfigJSON:         string(bundleJson),
+		Created:            timestamp,
+		CreatedBy:          "",
+		Updated:            timestamp,
 		UpdatedBy:          "",
 		BundleName:         deploymentID,
 		BundleURI:          bundle.URI,
