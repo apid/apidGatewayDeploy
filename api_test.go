@@ -364,8 +364,8 @@ var _ = Describe("api", func() {
 		})
 
 		It("should get iso8601 time", func() {
-			testTimes := []string{"2017-04-05 04:47:36.462 +0000 UTC", "2017-04-05 04:47:36.462 -0700 MST"}
-			isoTime := []string{"2017-04-05T04:47:36.462Z", "2017-04-05T04:47:36.462-07:00"}
+			testTimes := []string{"", "2017-04-05 04:47:36.462 +0000 UTC", "2017-04-05 04:47:36.462 -0700 MST", "2017-04-05T04:47:36.462Z", "2017-04-05T04:47:36.462-07:00"}
+			isoTime := []string{"", "2017-04-05T04:47:36.462Z", "2017-04-05T04:47:36.462-07:00", "2017-04-05T04:47:36.462Z", "2017-04-05T04:47:36.462-07:00"}
 			for i, t := range testTimes {
 				log.Debug("insert deployment with timestamp: " + t)
 				deploymentID := "api_time_iso8601_" + strconv.Itoa(i)
@@ -386,7 +386,7 @@ var _ = Describe("api", func() {
 			Expect(err).ShouldNot(HaveOccurred())
 			json.Unmarshal(body, &depRes)
 
-			Expect(len(depRes)).To(Equal(2))
+			Expect(len(depRes)).To(Equal(len(testTimes)))
 
 			for i, dep := range depRes {
 				Expect(dep.Created).To(Equal(isoTime[i]))
