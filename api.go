@@ -31,6 +31,11 @@ const (
 	API_ERR_INTERNAL
 )
 
+const (
+	sqlTimeFormat = "2006-01-02 15:04:05.999 -0700 MST"
+	iso8601       = "2006-01-02T15:04:05.999Z07:00"
+)
+
 type deploymentsResult struct {
 	deployments []DataDeployment
 	err         error
@@ -246,9 +251,9 @@ func sendDeployments(w http.ResponseWriter, dataDeps []DataDeployment, eTag stri
 		apiDeps = append(apiDeps, ApiDeployment{
 			ID:               d.ID,
 			ScopeId:          d.DataScopeID,
-			Created:          d.Created,
+			Created:          convertTime(d.Created),
 			CreatedBy:        d.CreatedBy,
-			Updated:          d.Updated,
+			Updated:          convertTime(d.Updated),
 			UpdatedBy:        d.UpdatedBy,
 			BundleConfigJson: []byte(d.BundleConfigJSON),
 			ConfigJson:       []byte(d.ConfigJSON),
@@ -381,4 +386,19 @@ func incrementETag() string {
 func getETag() string {
 	e := atomic.LoadInt64(&eTag)
 	return strconv.FormatInt(e, 10)
+}
+
+func convertTime(t string) string {
+	if t == "" {
+		return ""
+	}
+	formats := []string{sqlTimeFormat, iso8601, time.RFC3339}
+	for _, f := range formats {
+		timestamp, err := time.Parse(f, t)
+		if err == nil {
+			return timestamp.Format(iso8601)
+		}
+	}
+	log.Panic("convertTime: Unsupported time format: " + t)
+	return ""
 }
