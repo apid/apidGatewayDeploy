@@ -41,7 +41,7 @@ func (h *apigeeSyncHandler) Handle(e apid.Event) {
 	} else if snapData, ok := e.(*common.Snapshot); ok {
 		processSnapshot(snapData)
 	} else {
-		log.Errorf("Received invalid event. Ignoring. %v", e)
+		log.Debugf("Received invalid event. Ignoring. %v", e)
 	}
 }
 
