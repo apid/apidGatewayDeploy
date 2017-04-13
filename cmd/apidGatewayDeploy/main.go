@@ -50,7 +50,7 @@ func main() {
 		}
 	}
 
-	apid.InitializePlugins()
+	apid.InitializePlugins("")
 
 	insertTestDeployments(deployments)
 
