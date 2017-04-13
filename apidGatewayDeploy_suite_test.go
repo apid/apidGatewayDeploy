@@ -40,7 +40,7 @@ var _ = BeforeSuite(func() {
 	config.Set(configApiServerBaseURI, "http://localhost")
 	config.Set(configDebounceDuration, "1ms")
 
-	apid.InitializePlugins()
+	apid.InitializePlugins("")
 
 	db, err := data.DB()
 	Expect(err).NotTo(HaveOccurred())
