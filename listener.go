@@ -61,9 +61,9 @@ func processSnapshot(snapshot *common.Snapshot) {
 
 	// if no tables, this a startup event for an existing DB
 	/*
-	if len(snapshot.Tables) != 0 {
-		log.Panic("snapshot.Tables is not empty!")
-	}
+		if len(snapshot.Tables) != 0 {
+			log.Panic("snapshot.Tables is not empty!")
+		}
 	*/
 	startupOnExistingDatabase()
 	log.Debug("Snapshot processed")
