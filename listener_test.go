@@ -18,7 +18,7 @@ var _ = Describe("listener", func() {
 
 	Context("ApigeeSync snapshot event", func() {
 
-		It("should set DB and process", func(done Done) {
+		XIt("should set DB and process", func(done Done) {
 
 			deploymentID := "listener_test_1"
 
@@ -231,7 +231,7 @@ var _ = Describe("listener", func() {
 
 	Context("ApigeeSync change event", func() {
 
-		It("add event should add a deployment", func(done Done) {
+		XIt("add event should add a deployment", func(done Done) {
 
 			deploymentID := "add_test_1"
 
@@ -285,7 +285,7 @@ var _ = Describe("listener", func() {
 			close(done)
 		})
 
-		It("delete event should delete a deployment", func(done Done) {
+		XIt("delete event should delete a deployment", func(done Done) {
 
 			deploymentID := "delete_test_1"
 

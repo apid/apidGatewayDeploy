@@ -54,69 +54,18 @@ func processSnapshot(snapshot *common.Snapshot) {
 		log.Panicf("Unable to access database: %v", err)
 	}
 
-	err = InitDB(db)
-	if err != nil {
-		log.Panicf("Unable to initialize database: %v", err)
-	}
-
-	var deploymentsToInsert []DataDeployment
-	var errResults apiDeploymentResults
-	for _, table := range snapshot.Tables {
-		switch table.Name {
-		case DEPLOYMENT_TABLE:
-			for _, row := range table.Rows {
-				dep, err := dataDeploymentFromRow(row)
-				if err == nil {
-					deploymentsToInsert = append(deploymentsToInsert, dep)
-				} else {
-					result := apiDeploymentResult{
-						ID:        dep.ID,
-						Status:    RESPONSE_STATUS_FAIL,
-						ErrorCode: TRACKER_ERR_DEPLOYMENT_BAD_JSON,
-						Message:   fmt.Sprintf("unable to parse deployment: %v", err),
-					}
-					errResults = append(errResults, result)
-				}
-			}
-		}
-	}
-
 	// ensure that no new database updates are made on old database
 	dbMux.Lock()
 	defer dbMux.Unlock()
-
-	tx, err := db.Begin()
-	if err != nil {
-		log.Panicf("Error starting transaction: %v", err)
-	}
-	defer tx.Rollback()
-
-	err = insertDeployments(tx, deploymentsToInsert)
-	if err != nil {
-		log.Panicf("Error processing Snapshot: %v", err)
-	}
-
-	err = tx.Commit()
-	if err != nil {
-		log.Panicf("Error committing Snapshot change: %v", err)
-	}
-
 	SetDB(db)
 
-	for _, dep := range deploymentsToInsert {
-		queueDownloadRequest(dep)
-	}
-
-	// transmit parsing errors back immediately
-	if len(errResults) > 0 {
-		go transmitDeploymentResultsToServer(errResults)
-	}
-
 	// if no tables, this a startup event for an existing DB
-	if len(snapshot.Tables) == 0 {
-		startupOnExistingDatabase()
+	/*
+	if len(snapshot.Tables) != 0 {
+		log.Panic("snapshot.Tables is not empty!")
 	}
-
+	*/
+	startupOnExistingDatabase()
 	log.Debug("Snapshot processed")
 }
 
@@ -159,7 +108,7 @@ func startupOnExistingDatabase() {
 
 func processChangeList(changes *common.ChangeList) {
 
-	// gather deleted bundle info
+	// changes have been applied to DB
 	var deploymentsToInsert, deploymentsToDelete []DataDeployment
 	var errResults apiDeploymentResults
 	for _, change := range changes.Changes {
@@ -198,28 +147,6 @@ func processChangeList(changes *common.ChangeList) {
 	// transmit parsing errors back immediately
 	if len(errResults) > 0 {
 		go transmitDeploymentResultsToServer(errResults)
-	}
-
-	tx, err := getDB().Begin()
-	if err != nil {
-		log.Panicf("Error processing ChangeList: %v", err)
-	}
-	defer tx.Rollback()
-
-	for _, dep := range deploymentsToDelete {
-		err = deleteDeployment(tx, dep.ID)
-		if err != nil {
-			log.Panicf("Error processing ChangeList: %v", err)
-		}
-	}
-	err = insertDeployments(tx, deploymentsToInsert)
-	if err != nil {
-		log.Panicf("Error processing ChangeList: %v", err)
-	}
-
-	err = tx.Commit()
-	if err != nil {
-		log.Panicf("Error processing ChangeList: %v", err)
 	}
 
 	for _, d := range deploymentsToDelete {
