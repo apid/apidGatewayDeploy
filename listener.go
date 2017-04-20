@@ -56,15 +56,8 @@ func processSnapshot(snapshot *common.Snapshot) {
 
 	// ensure that no new database updates are made on old database
 	dbMux.Lock()
-	defer dbMux.Unlock()
 	SetDB(db)
-
-	// if no tables, this a startup event for an existing DB
-	/*
-		if len(snapshot.Tables) != 0 {
-			log.Panic("snapshot.Tables is not empty!")
-		}
-	*/
+	dbMux.Unlock()
 	startupOnExistingDatabase()
 	log.Debug("Snapshot processed")
 }
