@@ -9,6 +9,7 @@ import (
 
 	"github.com/30x/apid-core"
 	"github.com/apigee-labs/transicator/common"
+	"strings"
 )
 
 const (
@@ -54,10 +55,38 @@ func processSnapshot(snapshot *common.Snapshot) {
 		log.Panicf("Unable to access database: %v", err)
 	}
 
+	// alter table
+	err = AlterTable(db)
+	if err != nil {
+		log.Error(err.Error())
+		if !strings.Contains(err.Error(), "duplicate") {
+			log.Panicf("Alter table failed: %v", err)
+		}
+	}
 	// ensure that no new database updates are made on old database
 	dbMux.Lock()
 	SetDB(db)
 	dbMux.Unlock()
+
+	// update deployments
+	deps, err := getDeploymentsToUpdate(db)
+	if err != nil {
+		log.Panicf("Unable to getDeploymentsToUpdate: %v", err)
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		log.Panicf("Error starting transaction: %v", err)
+	}
+	defer tx.Rollback()
+	err = updateDeploymentsColumns(tx, deps)
+	if err != nil {
+		log.Panicf("updateDeploymentsColumns failed: %v", err)
+	}
+	err = tx.Commit()
+	if err != nil {
+		log.Panicf("Error committing Snapshot update: %v", err)
+	}
+
 	startupOnExistingDatabase()
 	log.Debug("Snapshot processed")
 }
