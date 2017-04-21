@@ -295,7 +295,7 @@ var _ = Describe("api", func() {
 			Expect(resp.StatusCode).Should(Equal(http.StatusOK))
 
 			var deployStatus string
-			err = db.QueryRow("SELECT deploy_status FROM kms_deployments WHERE id=?", deploymentID).
+			err = db.QueryRow("SELECT deploy_status FROM edgex_deployments WHERE id=?", deploymentID).
 				Scan(&deployStatus)
 			Expect(deployStatus).Should(Equal(RESPONSE_STATUS_SUCCESS))
 		})
@@ -332,7 +332,7 @@ var _ = Describe("api", func() {
 			var deploy_error_code int
 			err = db.QueryRow(`
 			SELECT deploy_status, deploy_error_code, deploy_error_message
-			FROM kms_deployments
+			FROM edgex_deployments
 			WHERE id=?`, deploymentID).Scan(&deployStatus, &deploy_error_code, &deploy_error_message)
 			Expect(deployStatus).Should(Equal(RESPONSE_STATUS_FAIL))
 			Expect(deploy_error_code).Should(Equal(100))
