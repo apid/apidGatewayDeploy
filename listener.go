@@ -102,7 +102,7 @@ func startupOnExistingDatabase() {
 func processChangeList(changes *common.ChangeList) {
 
 	// changes have been applied to DB
-	var deploymentsToInsert, deploymentsToDelete []DataDeployment
+	var insertedDeployments, deletedDeployments []DataDeployment
 	var errResults apiDeploymentResults
 	for _, change := range changes.Changes {
 		switch change.Table {
@@ -111,7 +111,7 @@ func processChangeList(changes *common.ChangeList) {
 			case common.Insert:
 				dep, err := dataDeploymentFromRow(change.NewRow)
 				if err == nil {
-					deploymentsToInsert = append(deploymentsToInsert, dep)
+					insertedDeployments = append(insertedDeployments, dep)
 				} else {
 					result := apiDeploymentResult{
 						ID:        dep.ID,
@@ -130,7 +130,7 @@ func processChangeList(changes *common.ChangeList) {
 					ID:          id,
 					DataScopeID: dataScopeID,
 				}
-				deploymentsToDelete = append(deploymentsToDelete, dep)
+				deletedDeployments = append(deletedDeployments, dep)
 			default:
 				log.Errorf("unexpected operation: %s", change.Operation)
 			}
@@ -142,23 +142,23 @@ func processChangeList(changes *common.ChangeList) {
 		go transmitDeploymentResultsToServer(errResults)
 	}
 
-	for _, d := range deploymentsToDelete {
+	for _, d := range deletedDeployments {
 		deploymentsChanged <- d.ID
 	}
 
 	log.Debug("ChangeList processed")
 
-	for _, dep := range deploymentsToInsert {
+	for _, dep := range insertedDeployments {
 		queueDownloadRequest(dep)
 	}
 
 	// clean up old bundles
-	if len(deploymentsToDelete) > 0 {
-		log.Debugf("will delete %d old bundles", len(deploymentsToDelete))
+	if len(deletedDeployments) > 0 {
+		log.Debugf("will delete %d old bundles", len(deletedDeployments))
 		go func() {
 			// give clients a minute to avoid conflicts
 			time.Sleep(bundleCleanupDelay)
-			for _, dep := range deploymentsToDelete {
+			for _, dep := range deletedDeployments {
 				bundleFile := getBundleFile(dep)
 				log.Debugf("removing old bundle: %v", bundleFile)
 				safeDelete(bundleFile)
