@@ -40,7 +40,7 @@ type SQLExec interface {
 
 func InitDB(db apid.DB) error {
 	_, err := db.Exec(`
-	CREATE TABLE IF NOT EXISTS edgex_deployments (
+	CREATE TABLE IF NOT EXISTS edgex_deployment (
 		id character varying(36) NOT NULL,
 		bundle_config_id varchar(36) NOT NULL,
 		apid_cluster_id varchar(36) NOT NULL,
@@ -91,10 +91,10 @@ func InsertDeployment(tx *sql.Tx, dep DataDeployment) error {
 
 func insertDeployments(tx *sql.Tx, deps []DataDeployment) error {
 
-	log.Debugf("inserting %d edgex_deployments", len(deps))
+	log.Debugf("inserting %d edgex_deployment", len(deps))
 
 	stmt, err := tx.Prepare(`
-	INSERT INTO edgex_deployments
+	INSERT INTO edgex_deployment
 		(id, bundle_config_id, apid_cluster_id, data_scope_id,
 		bundle_config_json, config_json, created, created_by,
 		updated, updated_by, bundle_name, bundle_uri, local_bundle_uri,
@@ -103,7 +103,7 @@ func insertDeployments(tx *sql.Tx, deps []DataDeployment) error {
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18);
 	`)
 	if err != nil {
-		log.Errorf("prepare insert into edgex_deployments failed: %v", err)
+		log.Errorf("prepare insert into edgex_deployment failed: %v", err)
 		return err
 	}
 	defer stmt.Close()
@@ -118,12 +118,12 @@ func insertDeployments(tx *sql.Tx, deps []DataDeployment) error {
 			dep.LocalBundleURI, dep.BundleChecksum, dep.BundleChecksumType, dep.DeployStatus,
 			dep.DeployErrorCode, dep.DeployErrorMessage)
 		if err != nil {
-			log.Errorf("insert into edgex_deployments %s failed: %v", dep.ID, err)
+			log.Errorf("insert into edgex_deployment %s failed: %v", dep.ID, err)
 			return err
 		}
 	}
 
-	log.Debug("inserting edgex_deployments succeeded")
+	log.Debug("inserting edgex_deployment succeeded")
 	return err
 }
 
@@ -131,16 +131,16 @@ func deleteDeployment(tx *sql.Tx, depID string) error {
 
 	log.Debugf("deleteDeployment: %s", depID)
 
-	stmt, err := tx.Prepare("DELETE FROM edgex_deployments where id = $1;")
+	stmt, err := tx.Prepare("DELETE FROM edgex_deployment where id = $1;")
 	if err != nil {
-		log.Errorf("prepare delete from edgex_deployments %s failed: %v", depID, err)
+		log.Errorf("prepare delete from edgex_deployment %s failed: %v", depID, err)
 		return err
 	}
 	defer stmt.Close()
 
 	_, err = stmt.Exec(depID)
 	if err != nil {
-		log.Errorf("delete from edgex_deployments %s failed: %v", depID, err)
+		log.Errorf("delete from edgex_deployment %s failed: %v", depID, err)
 		return err
 	}
 
@@ -169,7 +169,7 @@ func getDeployments(where string, a ...interface{}) (deployments []DataDeploymen
 		updated, updated_by, bundle_name, bundle_uri,
 		local_bundle_uri, bundle_checksum, bundle_checksum_type, deploy_status,
 		deploy_error_code, deploy_error_message
-	FROM edgex_deployments
+	FROM edgex_deployment
 	` + where)
 	if err != nil {
 		return
@@ -181,7 +181,7 @@ func getDeployments(where string, a ...interface{}) (deployments []DataDeploymen
 		if err == sql.ErrNoRows {
 			return
 		}
-		log.Errorf("Error querying edgex_deployments: %v", err)
+		log.Errorf("Error querying edgex_deployment: %v", err)
 		return
 	}
 	defer rows.Close()
@@ -220,7 +220,7 @@ func setDeploymentResults(results apiDeploymentResults) error {
 	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(`
-	UPDATE edgex_deployments
+	UPDATE edgex_deployment
 	SET deploy_status=$1, deploy_error_code=$2, deploy_error_message=$3
 	WHERE id=$4;
 	`)
@@ -233,7 +233,7 @@ func setDeploymentResults(results apiDeploymentResults) error {
 	for _, result := range results {
 		res, err := stmt.Exec(result.Status, result.ErrorCode, result.Message, result.ID)
 		if err != nil {
-			log.Errorf("update edgex_deployments %s to %s failed: %v", result.ID, result.Status, err)
+			log.Errorf("update edgex_deployment %s to %s failed: %v", result.ID, result.Status, err)
 			return err
 		}
 		n, err := res.RowsAffected()
@@ -251,7 +251,7 @@ func setDeploymentResults(results apiDeploymentResults) error {
 
 func updateLocalBundleURI(depID, localBundleUri string) error {
 
-	stmt, err := getDB().Prepare("UPDATE edgex_deployments SET local_bundle_uri=$1 WHERE id=$2;")
+	stmt, err := getDB().Prepare("UPDATE edgex_deployment SET local_bundle_uri=$1 WHERE id=$2;")
 	if err != nil {
 		log.Errorf("prepare updateLocalBundleURI failed: %v", err)
 		return err
@@ -260,11 +260,11 @@ func updateLocalBundleURI(depID, localBundleUri string) error {
 
 	_, err = stmt.Exec(localBundleUri, depID)
 	if err != nil {
-		log.Errorf("update edgex_deployments %s localBundleUri to %s failed: %v", depID, localBundleUri, err)
+		log.Errorf("update edgex_deployment %s localBundleUri to %s failed: %v", depID, localBundleUri, err)
 		return err
 	}
 
-	log.Debugf("update edgex_deployments %s localBundleUri to %s succeeded", depID, localBundleUri)
+	log.Debugf("update edgex_deployment %s localBundleUri to %s succeeded", depID, localBundleUri)
 
 	return nil
 }

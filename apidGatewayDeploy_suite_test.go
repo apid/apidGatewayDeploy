@@ -114,7 +114,7 @@ var _ = BeforeEach(func() {
 	apiServerBaseURI, err = url.Parse(testServer.URL)
 	Expect(err).NotTo(HaveOccurred())
 
-	_, err = getDB().Exec("DELETE FROM edgex_deployments")
+	_, err = getDB().Exec("DELETE FROM edgex_deployment")
 	Expect(err).ShouldNot(HaveOccurred())
 	_, err = getDB().Exec("UPDATE etag SET value=1")
 })
