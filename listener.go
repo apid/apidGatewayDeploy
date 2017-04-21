@@ -58,9 +58,10 @@ func processSnapshot(snapshot *common.Snapshot) {
 	// alter table
 	err = AlterTable(db)
 	if err != nil {
-		log.Error(err.Error())
 		if !strings.Contains(err.Error(), "duplicate") {
 			log.Panicf("Alter table failed: %v", err)
+		} else {
+			log.Info("start with local sqlite DB")
 		}
 	}
 	// ensure that no new database updates are made on old database
