@@ -229,31 +229,6 @@ func getDeploymentsToUpdate(db apid.DB) (deployments []DataDeployment, err error
 	return
 }
 
-/*
-func countColumns(db apid.DB) int {
-	stmt, err := db.Prepare(`
-	SELECT * FROM edgex_deployment LIMIT 1;
-	`)
-	if err != nil {
-		log.Panicf("countColumns Failed %v", err)
-		return
-	}
-	defer stmt.Close()
-	var rows *sql.Rows
-	rows, err = stmt.Query()
-	if err != nil {
-		log.Panicf("countColumns Failed %v", err)
-		return
-	}
-	defer rows.Close()
-	cols, err :=rows.Columns()
-	if err != nil {
-		log.Panicf("countColumns Failed %v", err)
-		return
-	}
-	return len(cols)
-}
-*/
 func deleteDeployment(tx *sql.Tx, depID string) error {
 
 	log.Debugf("deleteDeployment: %s", depID)
