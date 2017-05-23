@@ -7,6 +7,7 @@ import (
 
 	"encoding/json"
 	"github.com/30x/apid-core"
+	"strings"
 )
 
 var (
@@ -96,20 +97,27 @@ func InitDB(db apid.DB) error {
 	return nil
 }
 
-func AlterTable(db apid.DB) error {
-	_, err := db.Exec(`
-	ALTER TABLE edgex_deployment ADD COLUMN bundle_uri text;
-	ALTER TABLE edgex_deployment ADD COLUMN local_bundle_uri text;
-	ALTER TABLE edgex_deployment ADD COLUMN bundle_checksum text;
-	ALTER TABLE edgex_deployment ADD COLUMN bundle_checksum_type text;
-	ALTER TABLE edgex_deployment ADD COLUMN deploy_status string;
-	ALTER TABLE edgex_deployment ADD COLUMN deploy_error_code int;
-	ALTER TABLE edgex_deployment ADD COLUMN deploy_error_message text;
-	`)
-	if err != nil {
-		return err
+func alterTable(db apid.DB) error {
+	queries := []string{
+		"ALTER TABLE edgex_deployment ADD COLUMN bundle_uri text;",
+		"ALTER TABLE edgex_deployment ADD COLUMN local_bundle_uri text;",
+		"ALTER TABLE edgex_deployment ADD COLUMN bundle_checksum text;",
+		"ALTER TABLE edgex_deployment ADD COLUMN bundle_checksum_type text;",
+		"ALTER TABLE edgex_deployment ADD COLUMN deploy_status string;",
+		"ALTER TABLE edgex_deployment ADD COLUMN deploy_error_code int;",
+		"ALTER TABLE edgex_deployment ADD COLUMN deploy_error_message text;",
 	}
 
+	for _, query := range queries {
+		_, err := db.Exec(query)
+		if err != nil {
+			if strings.Contains(err.Error(), "duplicate column name")   {
+				log.Warnf("AlterTable warning: %s", err)
+			} else {
+				return err
+			}
+		}
+	}
 	log.Debug("Database table altered.")
 	return nil
 }

@@ -9,7 +9,6 @@ import (
 
 	"github.com/30x/apid-core"
 	"github.com/apigee-labs/transicator/common"
-	"strings"
 )
 
 const (
@@ -56,13 +55,9 @@ func processSnapshot(snapshot *common.Snapshot) {
 	}
 
 	// alter table
-	err = AlterTable(db)
+	err = alterTable(db)
 	if err != nil {
-		if !strings.Contains(err.Error(), "duplicate") {
-			log.Panicf("Alter table failed: %v", err)
-		} else {
-			log.Info("start with local sqlite DB")
-		}
+		log.Panicf("Alter table failed: %v", err)
 	}
 	// ensure that no new database updates are made on old database
 	dbMux.Lock()
