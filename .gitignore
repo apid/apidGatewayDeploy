@@ -5,5 +5,3 @@ vendor
 cmd/apidGatewayDeploy/apidGatewayDeploy
 *.lock
 /apidGatewayDeploy.iml
-/data.go
-.idea
