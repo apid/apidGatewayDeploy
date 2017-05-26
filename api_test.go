@@ -295,7 +295,7 @@ var _ = Describe("api", func() {
 			Expect(resp.StatusCode).Should(Equal(http.StatusOK))
 
 			var deployStatus string
-			err = db.QueryRow("SELECT deploy_status FROM deployments WHERE id=?", deploymentID).
+			err = db.QueryRow("SELECT deploy_status FROM edgex_deployment WHERE id=?", deploymentID).
 				Scan(&deployStatus)
 			Expect(deployStatus).Should(Equal(RESPONSE_STATUS_SUCCESS))
 		})
@@ -332,7 +332,7 @@ var _ = Describe("api", func() {
 			var deploy_error_code int
 			err = db.QueryRow(`
 			SELECT deploy_status, deploy_error_code, deploy_error_message
-			FROM deployments
+			FROM edgex_deployment
 			WHERE id=?`, deploymentID).Scan(&deployStatus, &deploy_error_code, &deploy_error_message)
 			Expect(deployStatus).Should(Equal(RESPONSE_STATUS_FAIL))
 			Expect(deploy_error_code).Should(Equal(100))
@@ -364,8 +364,8 @@ var _ = Describe("api", func() {
 		})
 
 		It("should get iso8601 time", func() {
-			testTimes := []string{"", "2017-04-05 04:47:36.462 +0000 UTC", "2017-04-05 04:47:36.462 -0700 MST", "2017-04-05T04:47:36.462Z", "2017-04-05T04:47:36.462-07:00"}
-			isoTime := []string{"", "2017-04-05T04:47:36.462Z", "2017-04-05T04:47:36.462-07:00", "2017-04-05T04:47:36.462Z", "2017-04-05T04:47:36.462-07:00"}
+			testTimes := []string{"", "2017-04-05 04:47:36.462 +0000 UTC", "2017-04-05 04:47:36.462-07:00", "2017-04-05T04:47:36.462Z", "2017-04-05 23:23:38.162+00:00"}
+			isoTime := []string{"", "2017-04-05T04:47:36.462Z", "2017-04-05T04:47:36.462-07:00", "2017-04-05T04:47:36.462Z", "2017-04-05T23:23:38.162Z"}
 			for i, t := range testTimes {
 				log.Debug("insert deployment with timestamp: " + t)
 				deploymentID := "api_time_iso8601_" + strconv.Itoa(i)

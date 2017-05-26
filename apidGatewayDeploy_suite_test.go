@@ -42,9 +42,10 @@ var _ = BeforeSuite(func() {
 
 	apid.InitializePlugins("")
 
+	// init full DB
 	db, err := data.DB()
 	Expect(err).NotTo(HaveOccurred())
-	err = InitDB(db)
+	err = InitDBFullColumns(db)
 	Expect(err).NotTo(HaveOccurred())
 	SetDB(db)
 
@@ -114,8 +115,9 @@ var _ = BeforeEach(func() {
 	apiServerBaseURI, err = url.Parse(testServer.URL)
 	Expect(err).NotTo(HaveOccurred())
 
-	_, err = getDB().Exec("DELETE FROM deployments")
+	_, err = getDB().Exec("DELETE FROM edgex_deployment")
 	Expect(err).ShouldNot(HaveOccurred())
+
 	_, err = getDB().Exec("UPDATE etag SET value=1")
 })
 

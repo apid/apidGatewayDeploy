@@ -54,69 +54,36 @@ func processSnapshot(snapshot *common.Snapshot) {
 		log.Panicf("Unable to access database: %v", err)
 	}
 
-	err = InitDB(db)
+	// alter table
+	err = alterTable(db)
 	if err != nil {
-		log.Panicf("Unable to initialize database: %v", err)
+		log.Panicf("Alter table failed: %v", err)
 	}
-
-	var deploymentsToInsert []DataDeployment
-	var errResults apiDeploymentResults
-	for _, table := range snapshot.Tables {
-		switch table.Name {
-		case DEPLOYMENT_TABLE:
-			for _, row := range table.Rows {
-				dep, err := dataDeploymentFromRow(row)
-				if err == nil {
-					deploymentsToInsert = append(deploymentsToInsert, dep)
-				} else {
-					result := apiDeploymentResult{
-						ID:        dep.ID,
-						Status:    RESPONSE_STATUS_FAIL,
-						ErrorCode: TRACKER_ERR_DEPLOYMENT_BAD_JSON,
-						Message:   fmt.Sprintf("unable to parse deployment: %v", err),
-					}
-					errResults = append(errResults, result)
-				}
-			}
-		}
-	}
-
 	// ensure that no new database updates are made on old database
 	dbMux.Lock()
-	defer dbMux.Unlock()
+	SetDB(db)
+	dbMux.Unlock()
 
+	// update deployments
+	deps, err := getDeploymentsToUpdate(db)
+	if err != nil {
+		log.Panicf("Unable to getDeploymentsToUpdate: %v", err)
+	}
 	tx, err := db.Begin()
 	if err != nil {
 		log.Panicf("Error starting transaction: %v", err)
 	}
 	defer tx.Rollback()
-
-	err = insertDeployments(tx, deploymentsToInsert)
+	err = updateDeploymentsColumns(tx, deps)
 	if err != nil {
-		log.Panicf("Error processing Snapshot: %v", err)
+		log.Panicf("updateDeploymentsColumns failed: %v", err)
 	}
-
 	err = tx.Commit()
 	if err != nil {
-		log.Panicf("Error committing Snapshot change: %v", err)
+		log.Panicf("Error committing Snapshot update: %v", err)
 	}
 
-	SetDB(db)
-
-	for _, dep := range deploymentsToInsert {
-		queueDownloadRequest(dep)
-	}
-
-	// transmit parsing errors back immediately
-	if len(errResults) > 0 {
-		go transmitDeploymentResultsToServer(errResults)
-	}
-
-	// if no tables, this a startup event for an existing DB
-	if len(snapshot.Tables) == 0 {
-		startupOnExistingDatabase()
-	}
-
+	startupOnExistingDatabase()
 	log.Debug("Snapshot processed")
 }
 
@@ -159,8 +126,8 @@ func startupOnExistingDatabase() {
 
 func processChangeList(changes *common.ChangeList) {
 
-	// gather deleted bundle info
-	var deploymentsToInsert, deploymentsToDelete []DataDeployment
+	// changes have been applied to DB
+	var insertedDeployments, deletedDeployments []DataDeployment
 	var errResults apiDeploymentResults
 	for _, change := range changes.Changes {
 		switch change.Table {
@@ -169,7 +136,7 @@ func processChangeList(changes *common.ChangeList) {
 			case common.Insert:
 				dep, err := dataDeploymentFromRow(change.NewRow)
 				if err == nil {
-					deploymentsToInsert = append(deploymentsToInsert, dep)
+					insertedDeployments = append(insertedDeployments, dep)
 				} else {
 					result := apiDeploymentResult{
 						ID:        dep.ID,
@@ -188,7 +155,7 @@ func processChangeList(changes *common.ChangeList) {
 					ID:          id,
 					DataScopeID: dataScopeID,
 				}
-				deploymentsToDelete = append(deploymentsToDelete, dep)
+				deletedDeployments = append(deletedDeployments, dep)
 			default:
 				log.Errorf("unexpected operation: %s", change.Operation)
 			}
@@ -200,45 +167,23 @@ func processChangeList(changes *common.ChangeList) {
 		go transmitDeploymentResultsToServer(errResults)
 	}
 
-	tx, err := getDB().Begin()
-	if err != nil {
-		log.Panicf("Error processing ChangeList: %v", err)
-	}
-	defer tx.Rollback()
-
-	for _, dep := range deploymentsToDelete {
-		err = deleteDeployment(tx, dep.ID)
-		if err != nil {
-			log.Panicf("Error processing ChangeList: %v", err)
-		}
-	}
-	err = insertDeployments(tx, deploymentsToInsert)
-	if err != nil {
-		log.Panicf("Error processing ChangeList: %v", err)
-	}
-
-	err = tx.Commit()
-	if err != nil {
-		log.Panicf("Error processing ChangeList: %v", err)
-	}
-
-	for _, d := range deploymentsToDelete {
+	for _, d := range deletedDeployments {
 		deploymentsChanged <- d.ID
 	}
 
 	log.Debug("ChangeList processed")
 
-	for _, dep := range deploymentsToInsert {
+	for _, dep := range insertedDeployments {
 		queueDownloadRequest(dep)
 	}
 
 	// clean up old bundles
-	if len(deploymentsToDelete) > 0 {
-		log.Debugf("will delete %d old bundles", len(deploymentsToDelete))
+	if len(deletedDeployments) > 0 {
+		log.Debugf("will delete %d old bundles", len(deletedDeployments))
 		go func() {
 			// give clients a minute to avoid conflicts
 			time.Sleep(bundleCleanupDelay)
-			for _, dep := range deploymentsToDelete {
+			for _, dep := range deletedDeployments {
 				bundleFile := getBundleFile(dep)
 				log.Debugf("removing old bundle: %v", bundleFile)
 				safeDelete(bundleFile)
