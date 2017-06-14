@@ -46,14 +46,6 @@ func queueDownloadRequest(dep DataDeployment) {
 	if err != nil {
 		msg := fmt.Sprintf("invalid bundle checksum type: %s for deployment: %s", dep.BundleChecksumType, dep.ID)
 		log.Error(msg)
-		setDeploymentResults(apiDeploymentResults{
-			{
-				ID:        dep.ID,
-				Status:    RESPONSE_STATUS_FAIL,
-				ErrorCode: TRACKER_ERR_BUNDLE_BAD_CHECKSUM,
-				Message:   msg,
-			},
-		})
 		return
 	}
 
@@ -131,14 +123,6 @@ func (r *DownloadRequest) checkTimeout() {
 			r.markFailedAt = time.Time{}
 			log.Debugf("bundle download timeout. marking deployment %s failed. will keep retrying: %s",
 				r.dep.ID, r.dep.BundleURI)
-			setDeploymentResults(apiDeploymentResults{
-				{
-					ID:        r.dep.ID,
-					Status:    RESPONSE_STATUS_FAIL,
-					ErrorCode: TRACKER_ERR_BUNDLE_DOWNLOAD_TIMEOUT,
-					Message:   "bundle download failed",
-				},
-			})
 		}
 	}
 }

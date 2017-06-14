@@ -1,12 +1,8 @@
 package apiGatewayDeploy
 
 import (
-	"bytes"
 	"encoding/json"
-	"fmt"
-	"io/ioutil"
 	"net/http"
-	"net/url"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -20,14 +16,10 @@ const (
 
 const (
 	TRACKER_ERR_BUNDLE_DOWNLOAD_TIMEOUT = iota + 1
-	TRACKER_ERR_BUNDLE_BAD_CHECKSUM
-	TRACKER_ERR_DEPLOYMENT_BAD_JSON
 )
 
 const (
 	API_ERR_BAD_BLOCK = iota + 1
-	API_ERR_BAD_JSON
-	API_ERR_BAD_CONTENT
 	API_ERR_INTERNAL
 )
 
@@ -71,21 +63,12 @@ type ApiDeployment struct {
 // sent to client
 type ApiDeploymentResponse []ApiDeployment
 
-type apiDeploymentResult struct {
-	ID        string `json:"id"`
-	Status    string `json:"status"`
-	ErrorCode int    `json:"errorCode"`
-	Message   string `json:"message"`
-}
 
-// received from client
-type apiDeploymentResults []apiDeploymentResult
 
 const deploymentsEndpoint = "/deployments"
 
 func InitAPI() {
 	services.API().HandleFunc(deploymentsEndpoint, apiGetCurrentDeployments).Methods("GET")
-	services.API().HandleFunc(deploymentsEndpoint, apiSetDeploymentResults).Methods("PUT")
 }
 
 func writeError(w http.ResponseWriter, status int, code int, reason string) {
@@ -273,109 +256,6 @@ func sendDeployments(w http.ResponseWriter, dataDeps []DataDeployment, eTag stri
 	log.Debugf("sending deployments %s: %s", eTag, b)
 	w.Header().Set("ETag", eTag)
 	w.Write(b)
-}
-
-func apiSetDeploymentResults(w http.ResponseWriter, r *http.Request) {
-
-	var results apiDeploymentResults
-	buf, _ := ioutil.ReadAll(r.Body)
-	err := json.Unmarshal(buf, &results)
-	if err != nil {
-		log.Errorf("Resp Handler Json Unmarshal err: ", err)
-		writeError(w, http.StatusBadRequest, API_ERR_BAD_JSON, "Malformed JSON")
-		return
-	}
-
-	// validate the results
-	// todo: these errors to the client should be standardized
-	var errs bytes.Buffer
-	var validResults apiDeploymentResults
-	for i, result := range results {
-		valid := true
-		if result.ID == "" {
-			errs.WriteString(fmt.Sprintf("Missing id at %d\n", i))
-		}
-
-		if result.Status != RESPONSE_STATUS_SUCCESS && result.Status != RESPONSE_STATUS_FAIL {
-			errs.WriteString(fmt.Sprintf("status must be '%s' or '%s' at %d\n",
-				RESPONSE_STATUS_SUCCESS, RESPONSE_STATUS_FAIL, i))
-		}
-
-		if result.Status == RESPONSE_STATUS_FAIL {
-			if result.ErrorCode == 0 {
-				errs.WriteString(fmt.Sprintf("errorCode is required for status == fail at %d\n", i))
-			}
-			if result.Message == "" {
-				errs.WriteString(fmt.Sprintf("message are required for status == fail at %d\n", i))
-			}
-		}
-
-		if valid {
-			validResults = append(validResults, result)
-		}
-	}
-
-	if errs.Len() > 0 {
-		writeError(w, http.StatusBadRequest, API_ERR_BAD_CONTENT, errs.String())
-		return
-	}
-
-	if len(validResults) > 0 {
-		setDeploymentResults(validResults)
-	}
-
-	w.Write([]byte("OK"))
-}
-
-func addHeaders(req *http.Request) {
-	var token = services.Config().GetString("apigeesync_bearer_token")
-	req.Header.Add("Authorization", "Bearer "+token)
-}
-
-func transmitDeploymentResultsToServer(validResults apiDeploymentResults) error {
-
-	retryIn := bundleRetryDelay
-	maxBackOff := 5 * time.Minute
-	backOffFunc := createBackoff(retryIn, maxBackOff)
-
-	_, err := url.Parse(apiServerBaseURI.String())
-	if err != nil {
-		log.Errorf("unable to parse apiServerBaseURI %s: %v", apiServerBaseURI.String(), err)
-		return err
-	}
-	apiPath := fmt.Sprintf("%s/clusters/%s/apids/%s/deployments", apiServerBaseURI.String(), apidClusterID, apidInstanceID)
-
-	resultJSON, err := json.Marshal(validResults)
-	if err != nil {
-		log.Errorf("unable to marshal deployment results %v: %v", validResults, err)
-		return err
-	}
-
-	for {
-		log.Debugf("transmitting deployment results to tracker by URL=%s data=%s", apiPath, string(resultJSON))
-		req, err := http.NewRequest("PUT", apiPath, bytes.NewReader(resultJSON))
-		if err != nil {
-			log.Errorf("unable to create PUT request", err)
-			return err
-		}
-		req.Header.Add("Content-Type", "application/json")
-		addHeaders(req)
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil || resp.StatusCode != http.StatusOK {
-			if err != nil {
-				log.Errorf("failed to communicate with tracking service: %v", err)
-			} else {
-				b, _ := ioutil.ReadAll(resp.Body)
-				log.Errorf("tracking service call failed to %s, code: %d, body: %s", apiPath, resp.StatusCode, string(b))
-			}
-			resp.Body.Close()
-			backOffFunc()
-			continue
-		}
-		resp.Body.Close()
-		return nil
-	}
 }
 
 // call whenever the list of deployments changes

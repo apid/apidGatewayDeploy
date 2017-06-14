@@ -5,8 +5,6 @@ import (
 	"os"
 	"time"
 
-	"fmt"
-
 	"github.com/30x/apid-core"
 	"github.com/apigee-labs/transicator/common"
 )
@@ -88,29 +86,6 @@ func processSnapshot(snapshot *common.Snapshot) {
 }
 
 func startupOnExistingDatabase() {
-	// ensure all deployment statuses have been sent to tracker
-	go func() {
-		deployments, err := getDeployments("WHERE deploy_status != $1", "")
-		if err != nil {
-			log.Panicf("unable to query database for ready deployments: %v", err)
-		}
-		log.Debugf("Queuing %d deployments for bundle download", len(deployments))
-
-		var results apiDeploymentResults
-		for _, dep := range deployments {
-			result := apiDeploymentResult{
-				ID:        dep.ID,
-				Status:    dep.DeployStatus,
-				ErrorCode: dep.DeployErrorCode,
-				Message:   dep.DeployErrorMessage,
-			}
-			results = append(results, result)
-		}
-		if len(results) > 0 {
-			transmitDeploymentResultsToServer(results)
-		}
-	}()
-
 	// start bundle downloads that didn't finish
 	go func() {
 		deployments, err := getUnreadyDeployments()
@@ -128,7 +103,6 @@ func processChangeList(changes *common.ChangeList) {
 
 	// changes have been applied to DB
 	var insertedDeployments, deletedDeployments []DataDeployment
-	var errResults apiDeploymentResults
 	for _, change := range changes.Changes {
 		switch change.Table {
 		case DEPLOYMENT_TABLE:
@@ -137,14 +111,6 @@ func processChangeList(changes *common.ChangeList) {
 				dep, err := dataDeploymentFromRow(change.NewRow)
 				if err == nil {
 					insertedDeployments = append(insertedDeployments, dep)
-				} else {
-					result := apiDeploymentResult{
-						ID:        dep.ID,
-						Status:    RESPONSE_STATUS_FAIL,
-						ErrorCode: TRACKER_ERR_DEPLOYMENT_BAD_JSON,
-						Message:   fmt.Sprintf("unable to parse deployment: %v", err),
-					}
-					errResults = append(errResults, result)
 				}
 			case common.Delete:
 				var id, dataScopeID string
@@ -160,11 +126,6 @@ func processChangeList(changes *common.ChangeList) {
 				log.Errorf("unexpected operation: %s", change.Operation)
 			}
 		}
-	}
-
-	// transmit parsing errors back immediately
-	if len(errResults) > 0 {
-		go transmitDeploymentResultsToServer(errResults)
 	}
 
 	for _, d := range deletedDeployments {

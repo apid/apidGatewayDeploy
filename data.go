@@ -2,7 +2,6 @@ package apiGatewayDeploy
 
 import (
 	"database/sql"
-	"fmt"
 	"sync"
 
 	"encoding/json"
@@ -315,49 +314,7 @@ func dataDeploymentsFromRows(rows *sql.Rows) (deployments []DataDeployment) {
 	return
 }
 
-func setDeploymentResults(results apiDeploymentResults) error {
 
-	// also send results to server
-	go transmitDeploymentResultsToServer(results)
-
-	log.Debugf("setDeploymentResults: %v", results)
-
-	tx, err := getDB().Begin()
-	if err != nil {
-		log.Errorf("Unable to begin transaction: %v", err)
-		return err
-	}
-	defer tx.Rollback()
-
-	stmt, err := tx.Prepare(`
-	UPDATE edgex_deployment
-	SET deploy_status=$1, deploy_error_code=$2, deploy_error_message=$3
-	WHERE id=$4;
-	`)
-	if err != nil {
-		log.Errorf("prepare updateDeploymentStatus failed: %v", err)
-		return err
-	}
-	defer stmt.Close()
-
-	for _, result := range results {
-		res, err := stmt.Exec(result.Status, result.ErrorCode, result.Message, result.ID)
-		if err != nil {
-			log.Errorf("update edgex_deployment %s to %s failed: %v", result.ID, result.Status, err)
-			return err
-		}
-		n, err := res.RowsAffected()
-		if n == 0 || err != nil {
-			log.Error(fmt.Sprintf("no deployment matching '%s' to update. skipping.", result.ID))
-		}
-	}
-
-	err = tx.Commit()
-	if err != nil {
-		log.Errorf("Unable to commit setDeploymentResults transaction: %v", err)
-	}
-	return err
-}
 
 func updateLocalBundleURI(depID, localBundleUri string) error {
 
