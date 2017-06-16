@@ -48,16 +48,11 @@ type errorResponse struct {
 }
 
 type ApiDeployment struct {
-	ID               string          `json:"id"`
+	Org              string          `json:"org"`
+	Env              string          `json:"env"`
 	ScopeId          string          `json:"scopeId"`
-	Created          string          `json:"created"`
-	CreatedBy        string          `json:"createdBy"`
-	Updated          string          `json:"updated"`
-	UpdatedBy        string          `json:"updatedBy"`
-	ConfigJson       json.RawMessage `json:"configuration"`
-	BundleConfigJson json.RawMessage `json:"bundleConfiguration"`
-	DisplayName      string          `json:"displayName"`
-	URI              string          `json:"uri"`
+	Type             int             `json:"type"`
+	BlobURL          string          `json:"url"`
 }
 
 // sent to client
@@ -65,10 +60,12 @@ type ApiDeploymentResponse []ApiDeployment
 
 
 
-const deploymentsEndpoint = "/deployments"
+const deploymentsEndpoint = "/configurations"
+const BlobEndpoint = "/blob/{blobId}"
 
 func InitAPI() {
 	services.API().HandleFunc(deploymentsEndpoint, apiGetCurrentDeployments).Methods("GET")
+	services.API().HandleFunc(BlobEndpoint, apiReturnBlobData).Methods("GET")
 }
 
 func writeError(w http.ResponseWriter, status int, code int, reason string) {
@@ -133,7 +130,7 @@ func distributeEvents() {
 			subscribers = make(map[chan deploymentsResult]struct{})
 			go func() {
 				eTag := incrementETag()
-				deployments, err := getReadyDeployments()
+				deployments, err := getUnreadyDeployments()
 				log.Debugf("delivering deployments to %d subscribers", len(subs))
 				for subscriber := range subs {
 					log.Debugf("delivering to: %v", subscriber)
@@ -148,6 +145,10 @@ func distributeEvents() {
 			delete(subscribers, subscriber)
 		}
 	}
+}
+
+func apiReturnBlobData(w http.ResponseWriter, r *http.Request) {
+
 }
 
 func apiGetCurrentDeployments(w http.ResponseWriter, r *http.Request) {
@@ -233,16 +234,11 @@ func sendDeployments(w http.ResponseWriter, dataDeps []DataDeployment, eTag stri
 
 	for _, d := range dataDeps {
 		apiDeps = append(apiDeps, ApiDeployment{
-			ID:               d.ID,
-			ScopeId:          d.DataScopeID,
-			Created:          convertTime(d.Created),
-			CreatedBy:        d.CreatedBy,
-			Updated:          convertTime(d.Updated),
-			UpdatedBy:        d.UpdatedBy,
-			BundleConfigJson: []byte(d.BundleConfigJSON),
-			ConfigJson:       []byte(d.ConfigJSON),
-			DisplayName:      d.BundleName,
-			URI:              d.LocalBundleURI,
+			ScopeId:    d.DataScopeID,
+			Org:   	    d.OrgID,
+			Env:        d.EnvID,
+			Type:       d.Type,
+			BlobURL:    d.BlobURL,
 		})
 	}
 
@@ -269,17 +265,3 @@ func getETag() string {
 	return strconv.FormatInt(e, 10)
 }
 
-func convertTime(t string) string {
-	if t == "" {
-		return ""
-	}
-	formats := []string{sqliteTimeFormat, sqlTimeFormat, iso8601, time.RFC3339}
-	for _, f := range formats {
-		timestamp, err := time.Parse(f, t)
-		if err == nil {
-			return timestamp.Format(iso8601)
-		}
-	}
-	log.Panic("convertTime: Unsupported time format: " + t)
-	return ""
-}

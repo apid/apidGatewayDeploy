@@ -21,16 +21,19 @@ const (
 	configApidClusterID         = "apigeesync_cluster_id"
 	configConcurrentDownloads   = "apigeesync_concurrent_downloads"
 	configDownloadQueueSize     = "apigeesync_download_queue_size"
+	configBlobServerBaseURI     = "apigeesync_blob_server_base"
 )
 
 var (
 	services            apid.Services
 	log                 apid.LogService
 	data                apid.DataService
+	config              apid.ConfigService
 	bundlePath          string
 	debounceDuration    time.Duration
 	bundleCleanupDelay  time.Duration
 	apiServerBaseURI    *url.URL
+	blobServerURL       string
 	apidInstanceID      string
 	apidClusterID       string
 	downloadQueueSize   int
@@ -46,11 +49,16 @@ func initPlugin(s apid.Services) (apid.PluginData, error) {
 	log = services.Log().ForModule("apiGatewayDeploy")
 	log.Debug("start init")
 
-	config := services.Config()
+	config = services.Config()
 
 	if !config.IsSet(configApiServerBaseURI) {
 		return pluginData, fmt.Errorf("Missing required config value: %s", configApiServerBaseURI)
 	}
+
+	if !config.IsSet(configBlobServerBaseURI) {
+		return pluginData, fmt.Errorf("Missing required config value: %s", configBlobServerBaseURI)
+	}
+
 	var err error
 	apiServerBaseURI, err = url.Parse(config.GetString(configApiServerBaseURI))
 	if err != nil {
@@ -96,7 +104,7 @@ func initPlugin(s apid.Services) (apid.PluginData, error) {
 	}
 
 	data = services.Data()
-
+	blobServerURL = config.GetString(configBlobServerBaseURI)
 	concurrentDownloads = config.GetInt(configConcurrentDownloads)
 	downloadQueueSize = config.GetInt(configDownloadQueueSize)
 	relativeBundlePath := config.GetString(configBundleDirKey)

@@ -1,22 +1,15 @@
 package apiGatewayDeploy
 
 import (
-	"crypto/md5"
-	"crypto/sha256"
-	"crypto/sha512"
+
 	"encoding/base64"
-	"encoding/hex"
-	"errors"
 	"fmt"
-	"hash"
-	"hash/crc32"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
-	"strings"
 	"time"
 )
 
@@ -42,19 +35,11 @@ func createBackoff(retryIn, maxBackOff time.Duration) func() {
 
 func queueDownloadRequest(dep DataDeployment) {
 
-	hashWriter, err := getHashWriter(dep.BundleChecksumType)
-	if err != nil {
-		msg := fmt.Sprintf("invalid bundle checksum type: %s for deployment: %s", dep.BundleChecksumType, dep.ID)
-		log.Error(msg)
-		return
-	}
-
 	retryIn := bundleRetryDelay
 	maxBackOff := 5 * time.Minute
 	markFailedAt := time.Now().Add(markDeploymentFailedAfter)
 	req := &DownloadRequest{
 		dep:          dep,
-		hashWriter:   hashWriter,
 		bundleFile:   getBundleFile(dep),
 		backoffFunc:  createBackoff(retryIn, maxBackOff),
 		markFailedAt: markFailedAt,
@@ -64,7 +49,6 @@ func queueDownloadRequest(dep DataDeployment) {
 
 type DownloadRequest struct {
 	dep          DataDeployment
-	hashWriter   hash.Hash
 	bundleFile   string
 	backoffFunc  func()
 	markFailedAt time.Time
@@ -73,18 +57,11 @@ type DownloadRequest struct {
 func (r *DownloadRequest) downloadBundle() {
 
 	dep := r.dep
-	log.Debugf("starting bundle download attempt for %s: %s", dep.ID, dep.BundleURI)
-
-	deployments, err := getDeployments("WHERE id=$1", dep.ID)
-	if err == nil && len(deployments) == 0 {
-		log.Debugf("never mind, deployment %s was deleted", dep.ID)
-		return
-	}
+	log.Debugf("starting bundle download attempt for %s: %s", dep.ID, dep.BlobID)
 
 	r.checkTimeout()
 
-	r.hashWriter.Reset()
-	tempFile, err := downloadFromURI(dep.BundleURI, r.hashWriter, dep.BundleChecksum)
+	tempFile, err := downloadFromURI(dep.BlobID)
 
 	if err == nil {
 		err = os.Rename(tempFile, r.bundleFile)
@@ -98,7 +75,7 @@ func (r *DownloadRequest) downloadBundle() {
 	}
 
 	if err == nil {
-		err = updateLocalBundleURI(dep.ID, r.bundleFile)
+		err = updatelocal_fs_location(dep.BlobID, r.bundleFile)
 	}
 
 	if err != nil {
@@ -110,7 +87,7 @@ func (r *DownloadRequest) downloadBundle() {
 		return
 	}
 
-	log.Debugf("bundle for %s downloaded: %s", dep.ID, dep.BundleURI)
+	log.Debugf("bundle for %s downloaded: %s", dep.ID, dep.BlobID)
 
 	// send deployments to client
 	deploymentsChanged <- dep.ID
@@ -122,25 +99,59 @@ func (r *DownloadRequest) checkTimeout() {
 		if time.Now().After(r.markFailedAt) {
 			r.markFailedAt = time.Time{}
 			log.Debugf("bundle download timeout. marking deployment %s failed. will keep retrying: %s",
-				r.dep.ID, r.dep.BundleURI)
+				r.dep.ID, r.dep.BlobID)
 		}
 	}
 }
 
 func getBundleFile(dep DataDeployment) string {
 
-	// the content of the URI is unfortunately not guaranteed not to change, so I can't just use dep.BundleURI
+	// the content of the URI is unfortunately not guaranteed not to change, so I can't just use dep.BlobID
 	// unfortunately, this also means that a bundle cache isn't especially relevant
 	fileName := dep.DataScopeID + "_" + dep.ID
 
 	return path.Join(bundlePath, base64.StdEncoding.EncodeToString([]byte(fileName)))
 }
 
-func downloadFromURI(uri string, hashWriter hash.Hash, expectedHash string) (tempFileName string, err error) {
+func getSignedURL(blobId string) (string, error) {
 
-	log.Debugf("Downloading bundle: %s", uri)
+	blobUri, err := url.Parse(config.GetString(configBlobServerBaseURI))
+	if err != nil {
+		log.Panicf("bad url value for config %s: %s", blobUri, err)
+	}
+
+	//TODO : Just a temp Hack
+	blobUri.Path = path.Join(blobUri.Path, "/v1/blobstore/signeduri?action=GET&key=" + blobId)
+	uri := blobUri.String()
+
+	surl, err := getURIReader(uri)
+	if err != nil {
+		log.Errorf("Unable to get signed URL from BlobServer %s: %v", uri, err)
+		return "", err
+	}
+
+	signedURL, err := ioutil.ReadAll(surl)
+	if err != nil {
+		log.Errorf("Invalid response from BlobServer for {%s} error: {%v}", uri, err)
+		return "", err
+	}
+	return string(signedURL), nil
+}
+
+
+// downloadFromURI involves retrieving the signed URL for the blob, and storing the resource locally
+// after downloading the resource from GCS (via the signed URL)
+func downloadFromURI(blobId string) (tempFileName string, err error) {
 
 	var tempFile *os.File
+	log.Debugf("Downloading bundle: %s", blobId)
+
+	uri, err := getSignedURL(blobId)
+	if err != nil {
+		log.Errorf("Unable to get signed URL for blobId {%s}, error : {%v}", blobId, err)
+		return
+	}
+
 	tempFile, err = ioutil.TempFile(bundlePath, "download")
 	if err != nil {
 		log.Errorf("Unable to create temp file: %v", err)
@@ -149,28 +160,17 @@ func downloadFromURI(uri string, hashWriter hash.Hash, expectedHash string) (tem
 	defer tempFile.Close()
 	tempFileName = tempFile.Name()
 
-	var bundleReader io.ReadCloser
-	bundleReader, err = getURIFileReader(uri)
+	var confReader io.ReadCloser
+	confReader, err = getURIReader(uri)
 	if err != nil {
 		log.Errorf("Unable to retrieve bundle %s: %v", uri, err)
 		return
 	}
-	defer bundleReader.Close()
+	defer confReader.Close()
 
-	// track checksum
-	teedReader := io.TeeReader(bundleReader, hashWriter)
-
-	_, err = io.Copy(tempFile, teedReader)
+	_, err = io.Copy(tempFile, confReader)
 	if err != nil {
 		log.Errorf("Unable to write bundle %s: %v", tempFileName, err)
-		return
-	}
-
-	// check checksum
-	checksum := hex.EncodeToString(hashWriter.Sum(nil))
-	if checksum != expectedHash {
-		err = errors.New(fmt.Sprintf("Bad checksum on %s. calculated: %s, given: %s", tempFileName, checksum, expectedHash))
-		log.Error(err.Error())
 		return
 	}
 
@@ -179,25 +179,8 @@ func downloadFromURI(uri string, hashWriter hash.Hash, expectedHash string) (tem
 }
 
 // retrieveBundle retrieves bundle data from a URI
-func getURIFileReader(uriString string) (io.ReadCloser, error) {
+func getURIReader(uriString string) (io.ReadCloser, error) {
 
-	uri, err := url.Parse(uriString)
-	if err != nil {
-		return nil, fmt.Errorf("DownloadFileUrl: Failed to parse urlStr: %s", uriString)
-	}
-
-	// todo: add authentication - TBD?
-
-	// assume it's a file if no scheme - todo: remove file support?
-	if uri.Scheme == "" || uri.Scheme == "file" {
-		f, err := os.Open(uri.Path)
-		if err != nil {
-			return nil, err
-		}
-		return f, nil
-	}
-
-	// GET the contents at uriString
 	client := http.Client{
 		Timeout: bundleDownloadConnTimeout,
 	}
@@ -206,40 +189,9 @@ func getURIFileReader(uriString string) (io.ReadCloser, error) {
 		return nil, err
 	}
 	if res.StatusCode != 200 {
-		return nil, fmt.Errorf("Bundle uri %s failed with status %d", uriString, res.StatusCode)
+		return nil, fmt.Errorf("GET uri %s failed with status %d", uriString, res.StatusCode)
 	}
 	return res.Body, nil
-}
-
-func getHashWriter(hashType string) (hash.Hash, error) {
-
-	var hashWriter hash.Hash
-
-	switch strings.ToLower(hashType) {
-	case "":
-		hashWriter = fakeHash{md5.New()}
-	case "md5":
-		hashWriter = md5.New()
-	case "crc32":
-		hashWriter = crc32.NewIEEE()
-	case "sha256":
-		hashWriter = sha256.New()
-	case "sha512":
-		hashWriter = sha512.New()
-	default:
-		return nil, errors.New(
-			fmt.Sprintf("invalid checksumType: %s. valid types: md5, crc32, sha256, sha512", hashType))
-	}
-
-	return hashWriter, nil
-}
-
-type fakeHash struct {
-	hash.Hash
-}
-
-func (f fakeHash) Sum(b []byte) []byte {
-	return []byte("")
 }
 
 func initializeBundleDownloading() {

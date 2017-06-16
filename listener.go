@@ -1,12 +1,12 @@
 package apiGatewayDeploy
 
 import (
-	"encoding/json"
 	"os"
 	"time"
 
 	"github.com/30x/apid-core"
 	"github.com/apigee-labs/transicator/common"
+	"database/sql"
 )
 
 const (
@@ -52,35 +52,12 @@ func processSnapshot(snapshot *common.Snapshot) {
 		log.Panicf("Unable to access database: %v", err)
 	}
 
-	// alter table
-	err = alterTable(db)
-	if err != nil {
-		log.Panicf("Alter table failed: %v", err)
-	}
-	// ensure that no new database updates are made on old database
+	// Update the DB pointer
 	dbMux.Lock()
 	SetDB(db)
 	dbMux.Unlock()
 
-	// update deployments
-	deps, err := getDeploymentsToUpdate(db)
-	if err != nil {
-		log.Panicf("Unable to getDeploymentsToUpdate: %v", err)
-	}
-	tx, err := db.Begin()
-	if err != nil {
-		log.Panicf("Error starting transaction: %v", err)
-	}
-	defer tx.Rollback()
-	err = updateDeploymentsColumns(tx, deps)
-	if err != nil {
-		log.Panicf("updateDeploymentsColumns failed: %v", err)
-	}
-	err = tx.Commit()
-	if err != nil {
-		log.Panicf("Error committing Snapshot update: %v", err)
-	}
-
+	InitDB(db)
 	startupOnExistingDatabase()
 	log.Debug("Snapshot processed")
 }
@@ -89,7 +66,8 @@ func startupOnExistingDatabase() {
 	// start bundle downloads that didn't finish
 	go func() {
 		deployments, err := getUnreadyDeployments()
-		if err != nil {
+
+		if err != nil && err != sql.ErrNoRows {
 			log.Panicf("unable to query database for unready deployments: %v", err)
 		}
 		log.Debugf("Queuing %d deployments for bundle download", len(deployments))
@@ -156,27 +134,18 @@ func processChangeList(changes *common.ChangeList) {
 func dataDeploymentFromRow(row common.Row) (d DataDeployment, err error) {
 
 	row.Get("id", &d.ID)
-	row.Get("bundle_config_id", &d.BundleConfigID)
-	row.Get("apid_cluster_id", &d.ApidClusterID)
+	row.Get("org_id", &d.OrgID)
+	row.Get("env_id", &d.EnvID)
 	row.Get("data_scope_id", &d.DataScopeID)
-	row.Get("bundle_config_json", &d.BundleConfigJSON)
-	row.Get("config_json", &d.ConfigJSON)
-	row.Get("created", &d.Created)
-	row.Get("created_by", &d.CreatedBy)
-	row.Get("updated", &d.Updated)
-	row.Get("updated_by", &d.UpdatedBy)
-
-	var bc bundleConfigJson
-	json.Unmarshal([]byte(d.BundleConfigJSON), &bc)
-	if err != nil {
-		log.Errorf("JSON decoding Manifest failed: %v", err)
-		return
-	}
-
-	d.BundleName = bc.Name
-	d.BundleURI = bc.URI
-	d.BundleChecksumType = bc.ChecksumType
-	d.BundleChecksum = bc.Checksum
+	row.Get("bundle_config_json", &d.Type)
+	row.Get("config_json", &d.Name)
+	row.Get("created", &d.Revision)
+	row.Get("created_by", &d.BlobID)
+	row.Get("created_by", &d.BlobResourceID)
+	row.Get("created_by", &d.Updated)
+	row.Get("created_by", &d.UpdatedBy)
+	row.Get("created_by", &d.Created)
+	row.Get("updated", &d.CreatedBy)
 
 	return
 }

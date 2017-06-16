@@ -4,9 +4,8 @@ import (
 	"database/sql"
 	"sync"
 
-	"encoding/json"
 	"github.com/30x/apid-core"
-	"strings"
+
 )
 
 var (
@@ -16,76 +15,32 @@ var (
 
 type DataDeployment struct {
 	ID                 string
-	BundleConfigID     string
-	ApidClusterID      string
+	OrgID              string
+	EnvID              string
 	DataScopeID        string
-	BundleConfigJSON   string
-	ConfigJSON         string
-	Created            string
-	CreatedBy          string
+	Type               int
+	Name		   string
+	Revision           string
+	BlobID             string
+	BlobResourceID     string
 	Updated            string
 	UpdatedBy          string
-	BundleName         string
-	BundleURI          string
-	LocalBundleURI     string
-	BundleChecksum     string
-	BundleChecksumType string
-	DeployStatus       string
-	DeployErrorCode    int
-	DeployErrorMessage string
+	Created		   string
+	CreatedBy          string
+	BlobFSLocation     string
+	BlobURL            string
 }
 
 type SQLExec interface {
 	Exec(query string, args ...interface{}) (sql.Result, error)
 }
 
-func InitDBFullColumns(db apid.DB) error {
-	_, err := db.Exec(`
-	CREATE TABLE IF NOT EXISTS edgex_deployment (
-		id character varying(36) NOT NULL,
-		bundle_config_id varchar(36) NOT NULL,
-		apid_cluster_id varchar(36) NOT NULL,
-		data_scope_id varchar(36) NOT NULL,
-		bundle_config_json text NOT NULL,
-		config_json text NOT NULL,
-		created timestamp without time zone,
-		created_by text,
-		updated timestamp without time zone,
-		updated_by text,
-		bundle_config_name text,
-		bundle_uri text,
-		local_bundle_uri text,
-		bundle_checksum text,
-		bundle_checksum_type text,
-		deploy_status string,
-		deploy_error_code int,
-		deploy_error_message text,
-		PRIMARY KEY (id)
-	);
-	`)
-	if err != nil {
-		return err
-	}
-
-	log.Debug("Database tables created.")
-	return nil
-}
-
 func InitDB(db apid.DB) error {
 	_, err := db.Exec(`
-	CREATE TABLE IF NOT EXISTS edgex_deployment (
-		id character varying(36) NOT NULL,
-		bundle_config_id varchar(36) NOT NULL,
-		apid_cluster_id varchar(36) NOT NULL,
-		data_scope_id varchar(36) NOT NULL,
-		bundle_config_json text NOT NULL,
-		config_json text NOT NULL,
-		created timestamp without time zone,
-		created_by text,
-		updated timestamp without time zone,
-		updated_by text,
-		bundle_config_name text,
-		PRIMARY KEY (id)
+	CREATE TABLE IF NOT EXISTS edgex_blob_available (
+   		blob_id character varying NOT NULL,
+   		local_fs_location character varying NOT NULL,
+   		access_url character varying
 	);
 	`)
 	if err != nil {
@@ -93,31 +48,6 @@ func InitDB(db apid.DB) error {
 	}
 
 	log.Debug("Database tables created.")
-	return nil
-}
-
-func alterTable(db apid.DB) error {
-	queries := []string{
-		"ALTER TABLE edgex_deployment ADD COLUMN bundle_uri text;",
-		"ALTER TABLE edgex_deployment ADD COLUMN local_bundle_uri text;",
-		"ALTER TABLE edgex_deployment ADD COLUMN bundle_checksum text;",
-		"ALTER TABLE edgex_deployment ADD COLUMN bundle_checksum_type text;",
-		"ALTER TABLE edgex_deployment ADD COLUMN deploy_status string;",
-		"ALTER TABLE edgex_deployment ADD COLUMN deploy_error_code int;",
-		"ALTER TABLE edgex_deployment ADD COLUMN deploy_error_message text;",
-	}
-
-	for _, query := range queries {
-		_, err := db.Exec(query)
-		if err != nil {
-			if strings.Contains(err.Error(), "duplicate column name")   {
-				log.Warnf("AlterTable warning: %s", err)
-			} else {
-				return err
-			}
-		}
-	}
-	log.Debug("Database table altered.")
 	return nil
 }
 
@@ -136,232 +66,113 @@ func SetDB(db apid.DB) {
 	unsafeDB = db
 }
 
-func InsertDeployment(tx *sql.Tx, dep DataDeployment) error {
-	return insertDeployments(tx, []DataDeployment{dep})
-}
-
-func insertDeployments(tx *sql.Tx, deps []DataDeployment) error {
-
-	log.Debugf("inserting %d edgex_deployment", len(deps))
-
-	stmt, err := tx.Prepare(`
-	INSERT INTO edgex_deployment
-		(id, bundle_config_id, apid_cluster_id, data_scope_id,
-		bundle_config_json, config_json, created, created_by,
-		updated, updated_by, bundle_config_name, bundle_uri, local_bundle_uri,
-		bundle_checksum, bundle_checksum_type, deploy_status,
-		deploy_error_code, deploy_error_message)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18);
-	`)
-	if err != nil {
-		log.Errorf("prepare insert into edgex_deployment failed: %v", err)
-		return err
-	}
-	defer stmt.Close()
-
-	for _, dep := range deps {
-		log.Debugf("insertDeployment: %s", dep.ID)
-
-		_, err = stmt.Exec(
-			dep.ID, dep.BundleConfigID, dep.ApidClusterID, dep.DataScopeID,
-			dep.BundleConfigJSON, dep.ConfigJSON, dep.Created, dep.CreatedBy,
-			dep.Updated, dep.UpdatedBy, dep.BundleName, dep.BundleURI,
-			dep.LocalBundleURI, dep.BundleChecksum, dep.BundleChecksumType, dep.DeployStatus,
-			dep.DeployErrorCode, dep.DeployErrorMessage)
-		if err != nil {
-			log.Errorf("insert into edgex_deployment %s failed: %v", dep.ID, err)
-			return err
-		}
-	}
-
-	log.Debug("inserting edgex_deployment succeeded")
-	return err
-}
-
-func updateDeploymentsColumns(tx *sql.Tx, deps []DataDeployment) error {
-
-	log.Debugf("updating %d edgex_deployment", len(deps))
-
-	stmt, err := tx.Prepare(`
-	UPDATE edgex_deployment SET
-		(bundle_uri, local_bundle_uri,
-		bundle_checksum, bundle_checksum_type, deploy_status,
-		deploy_error_code, deploy_error_message)
-		= ($1,$2,$3,$4,$5,$6,$7) WHERE id = $8
-	`)
-	if err != nil {
-		log.Errorf("prepare update edgex_deployment failed: %v", err)
-		return err
-	}
-	defer stmt.Close()
-
-	for _, dep := range deps {
-		log.Debugf("updateDeploymentsColumns: processing deployment %s, %v", dep.ID, dep.BundleURI)
-
-		_, err = stmt.Exec(
-			dep.BundleURI,
-			dep.LocalBundleURI, dep.BundleChecksum, dep.BundleChecksumType, dep.DeployStatus,
-			dep.DeployErrorCode, dep.DeployErrorMessage, dep.ID)
-		if err != nil {
-			log.Errorf("updateDeploymentsColumns of edgex_deployment %s failed: %v", dep.ID, err)
-			return err
-		}
-	}
-
-	log.Debug("updateDeploymentsColumns of edgex_deployment succeeded")
-	return err
-}
-
-func getDeploymentsToUpdate(db apid.DB) (deployments []DataDeployment, err error) {
-	deployments, err = getDeployments("WHERE bundle_uri IS NULL AND local_bundle_uri IS NULL AND deploy_status IS NULL")
-	if err != nil {
-		log.Errorf("getDeployments in getDeploymentsToUpdate failed: %v", err)
-		return
-	}
-	var bc bundleConfigJson
-	for i, _ := range deployments {
-		log.Debugf("getDeploymentsToUpdate: processing deployment %v, %v", deployments[i].ID, deployments[i].BundleConfigJSON)
-		json.Unmarshal([]byte(deployments[i].BundleConfigJSON), &bc)
-		if err != nil {
-			log.Errorf("JSON decoding Manifest failed: %v", err)
-			return
-		}
-		deployments[i].BundleName = bc.Name
-		deployments[i].BundleURI = bc.URI
-		deployments[i].BundleChecksumType = bc.ChecksumType
-		deployments[i].BundleChecksum = bc.Checksum
-
-		log.Debugf("Unmarshal: %v", deployments[i].BundleURI)
-	}
-	return
-}
-
-func deleteDeployment(tx *sql.Tx, depID string) error {
-
-	log.Debugf("deleteDeployment: %s", depID)
-
-	stmt, err := tx.Prepare("DELETE FROM edgex_deployment where id = $1;")
-	if err != nil {
-		log.Errorf("prepare delete from edgex_deployment %s failed: %v", depID, err)
-		return err
-	}
-	defer stmt.Close()
-
-	_, err = stmt.Exec(depID)
-	if err != nil {
-		log.Errorf("delete from edgex_deployment %s failed: %v", depID, err)
-		return err
-	}
-
-	log.Debugf("deleteDeployment %s succeeded", depID)
-	return err
-}
-
-// getReadyDeployments() returns array of deployments that are ready to deploy
-func getReadyDeployments() (deployments []DataDeployment, err error) {
-	return getDeployments("WHERE local_bundle_uri != $1", "")
-}
-
-// getUnreadyDeployments() returns array of deployments that are not yet ready to deploy
+// getUnreadyDeployments() returns array of resources that are not yet to be processed
 func getUnreadyDeployments() (deployments []DataDeployment, err error) {
-	return getDeployments("WHERE local_bundle_uri = $1", "")
-}
 
-// getDeployments() accepts a "WHERE ..." clause and optional parameters and returns the list of deployments
-func getDeployments(where string, a ...interface{}) (deployments []DataDeployment, err error) {
+	err = nil
 	db := getDB()
 
-	var stmt *sql.Stmt
-	stmt, err = db.Prepare(`
-	SELECT id, bundle_config_id, apid_cluster_id, data_scope_id,
-		bundle_config_json, config_json, created, created_by,
-		updated, updated_by, bundle_config_name, bundle_uri,
-		local_bundle_uri, bundle_checksum, bundle_checksum_type, deploy_status,
-		deploy_error_code, deploy_error_message
-	FROM edgex_deployment
-	` + where)
+	rows, err := db.Query(`
+	SELECT id, org_id, env_id, name, revision, project_runtime_blob_metadata.blob_id, resource_blob_id
+		FROM project_runtime_blob_metadata
+			LEFT JOIN edgex_blob_available
+			ON project_runtime_blob_metadata.blob_id = edgex_blob_available.blob_id
+		WHERE edgex_blob_available.blob_id IS NULL;
+	`)
+
 	if err != nil {
-		return
-	}
-	defer stmt.Close()
-	var rows *sql.Rows
-	rows, err = stmt.Query(a...)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return
-		}
-		log.Errorf("Error querying edgex_deployment: %v", err)
+		log.Errorf("DB Query for project_runtime_blob_metadata failed %v", err)
 		return
 	}
 	defer rows.Close()
 
-	deployments = dataDeploymentsFromRows(rows)
-
-	return
-}
-
-func dataDeploymentsFromRows(rows *sql.Rows) (deployments []DataDeployment) {
 	for rows.Next() {
 		dep := DataDeployment{}
-		rows.Scan(&dep.ID, &dep.BundleConfigID, &dep.ApidClusterID, &dep.DataScopeID,
-			&dep.BundleConfigJSON, &dep.ConfigJSON, &dep.Created, &dep.CreatedBy,
-			&dep.Updated, &dep.UpdatedBy, &dep.BundleName, &dep.BundleURI,
-			&dep.LocalBundleURI, &dep.BundleChecksum, &dep.BundleChecksumType, &dep.DeployStatus,
-			&dep.DeployErrorCode, &dep.DeployErrorMessage,
-		)
+		rows.Scan(&dep.ID, &dep.OrgID, &dep.EnvID,  &dep.Name, &dep.Revision, &dep.BlobID,
+			&dep.BlobResourceID)
 		deployments = append(deployments, dep)
+		log.Debugf("New configurations to be processed Id {%s}, blobId {%s}", dep.ID, dep.BlobID)
+	}
+	if len(deployments) == 0 {
+		log.Debug("No new resources found to be processed")
+		err = sql.ErrNoRows
 	}
 	return
+
 }
 
+// getDeployments()
+func getReadyDeployments() (deployments []DataDeployment, err error) {
 
+	err = nil
+	db := getDB()
 
-func updateLocalBundleURI(depID, localBundleUri string) error {
-
-	stmt, err := getDB().Prepare("UPDATE edgex_deployment SET local_bundle_uri=$1 WHERE id=$2;")
-	if err != nil {
-		log.Errorf("prepare updateLocalBundleURI failed: %v", err)
-		return err
-	}
-	defer stmt.Close()
-
-	_, err = stmt.Exec(localBundleUri, depID)
-	if err != nil {
-		log.Errorf("update edgex_deployment %s localBundleUri to %s failed: %v", depID, localBundleUri, err)
-		return err
-	}
-
-	log.Debugf("update edgex_deployment %s localBundleUri to %s succeeded", depID, localBundleUri)
-
-	return nil
-}
-
-func InsertTestDeployment(tx *sql.Tx, dep DataDeployment) error {
-
-	stmt, err := tx.Prepare(`
-	INSERT INTO edgex_deployment
-		(id, bundle_config_id, apid_cluster_id, data_scope_id,
-		bundle_config_json, config_json, created, created_by,
-		updated, updated_by, bundle_config_name)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11);
+	rows, err := db.Query(`
+	SELECT a.id, a.org_id, a.env_id, a.name, a.revision, a.blob_id,
+		a.resource_blob_id, a.created_at, a.created_by, a.updated_at, a.updated_by,
+		b.local_fs_location, b.access_url
+		FROM project_runtime_blob_metadata as a
+			INNER JOIN edgex_blob_available as b
+			ON a.blob_id = b.blob_id
 	`)
+
 	if err != nil {
-		log.Errorf("prepare insert into edgex_deployment failed: %v", err)
+		log.Errorf("DB Query for project_runtime_blob_metadata failed %v", err)
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		dep := DataDeployment{}
+		rows.Scan(&dep.ID, &dep.OrgID, &dep.EnvID, &dep.Name, &dep.Revision, &dep.BlobID,
+			&dep.BlobResourceID, &dep.Created, &dep.CreatedBy, &dep.Updated,
+			&dep.UpdatedBy, &dep.BlobFSLocation, &dep.BlobURL)
+		deployments = append(deployments, dep)
+		log.Debugf("New Configurations available Id {%s} BlobId {%s}", dep.ID, dep.BlobID)
+	}
+	if len(deployments) == 0 {
+		log.Debug("No resources ready to be deployed")
+		err = sql.ErrNoRows
+	}
+	return
+
+}
+
+func updatelocal_fs_location(depID, local_fs_location string) error {
+
+	// TODO DEMO ONLY
+	access_url := "http://localhost:9090/blob/" + depID
+	stmt, err := getDB().Prepare(`
+		INSERT INTO edgex_blob_available (blob_id, local_fs_location, access_url)
+			VALUES (?, ?, ?)`)
+	if err != nil {
+		log.Errorf("PREPARE updatelocal_fs_location failed: %v", err)
 		return err
 	}
 	defer stmt.Close()
 
-	log.Debugf("InsertTestDeployment: %s", dep.ID)
-
-	_, err = stmt.Exec(
-		dep.ID, dep.BundleConfigID, dep.ApidClusterID, dep.DataScopeID,
-		dep.BundleConfigJSON, dep.ConfigJSON, dep.Created, dep.CreatedBy,
-		dep.Updated, dep.UpdatedBy, dep.BundleName)
+	_, err = stmt.Exec(depID, local_fs_location, access_url)
 	if err != nil {
-		log.Errorf("insert into edgex_deployment %s failed: %v", dep.ID, err)
+		log.Errorf("UPDATE edgex_blob_available id {%s} local_fs_location {%s} failed: %v", depID, local_fs_location, err)
 		return err
 	}
 
-	log.Debug("InsertTestDeployment edgex_deployment succeeded")
-	return err
+	log.Debugf("INSERT edgex_blob_available {%s} local_fs_location {%s} succeeded", depID, local_fs_location)
+	return nil
+
+}
+
+func getLocalFSLocation (blobId string) (locfs string , err error) {
+
+	db := getDB()
+
+	rows, err := db.Query("SELECT local_fs_location FROM edgex_blob_available WHERE blob_id = " + blobId)
+	if err != nil {
+		log.Errorf("SELECT local_fs_location failed %v", err)
+		return "", err
+	}
+
+	defer rows.Close()
+	rows.Scan(&locfs)
+	return
 }
