@@ -11,7 +11,7 @@ import (
 
 const (
 	APIGEE_SYNC_EVENT = "ApigeeSync"
-	DEPLOYMENT_TABLE  = "edgex.deployment"
+	CONFIG_METADATA_TABLE  = "project.runtime_blob_metadata"
 )
 
 func initListener(services apid.Services) {
@@ -79,11 +79,12 @@ func startupOnExistingDatabase() {
 
 func processChangeList(changes *common.ChangeList) {
 
+	log.Debugf("Processing changes")
 	// changes have been applied to DB
 	var insertedDeployments, deletedDeployments []DataDeployment
 	for _, change := range changes.Changes {
 		switch change.Table {
-		case DEPLOYMENT_TABLE:
+		case CONFIG_METADATA_TABLE:
 			switch change.Operation {
 			case common.Insert:
 				dep, err := dataDeploymentFromRow(change.NewRow)

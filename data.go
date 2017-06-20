@@ -140,8 +140,7 @@ func getReadyDeployments() (deployments []DataDeployment, err error) {
 
 func updatelocal_fs_location(depID, local_fs_location string) error {
 
-	// TODO DEMO ONLY
-	access_url := "http://localhost:9090/blob/" + depID
+	access_url :=  config.GetString("api_listen") + "/blob/" + depID
 	stmt, err := getDB().Prepare(`
 		INSERT INTO edgex_blob_available (blob_id, local_fs_location, access_url)
 			VALUES (?, ?, ?)`)
