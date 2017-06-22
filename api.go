@@ -49,6 +49,7 @@ const (
 	sqlTimeFormat    = "2006-01-02 15:04:05.999 -0700 MST"
 	iso8601          = "2006-01-02T15:04:05.999Z07:00"
 	sqliteTimeFormat = "2006-01-02 15:04:05.999-07:00"
+	changeTimeFormat = "2006-01-02 15:04:05.999"
 )
 
 type deploymentsResult struct {
@@ -407,7 +408,7 @@ func convertTime(t string) string {
 	if t == "" {
 		return ""
 	}
-	formats := []string{sqliteTimeFormat, sqlTimeFormat, iso8601, time.RFC3339}
+	formats := []string{sqliteTimeFormat, sqlTimeFormat, iso8601, time.RFC3339, changeTimeFormat}
 	for _, f := range formats {
 		timestamp, err := time.Parse(f, t)
 		if err == nil {
