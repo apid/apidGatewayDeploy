@@ -415,6 +415,6 @@ func convertTime(t string) string {
 			return timestamp.Format(iso8601)
 		}
 	}
-	log.Panic("convertTime: Unsupported time format: " + t)
-	return ""
+	log.Error("convertTime: Unsupported time format: " + t)
+	return t
 }
