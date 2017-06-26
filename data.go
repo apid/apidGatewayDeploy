@@ -125,7 +125,7 @@ func alterTable(db apid.DB) error {
 	for _, query := range queries {
 		_, err := db.Exec(query)
 		if err != nil {
-			if strings.Contains(err.Error(), "duplicate column name")   {
+			if strings.Contains(err.Error(), "duplicate column name") {
 				log.Warnf("AlterTable warning: %s", err)
 			} else {
 				return err
